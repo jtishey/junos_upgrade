@@ -30,7 +30,7 @@ CODE_JSU64 = 'jselective-update-amd64-J2-x86-64-16.1R6-S1-J2.tgz'
 
 CODE_FOLDER = '/home/john/Downloads/'
 CODE_IMAGE64 = 'jinstall-ex-4200-15.1R7.8-domestic-signed.tgz'
-CODE_IMAGE32 = 'jinstall-ex-4200-12.3R6.6-domestic-signed.tgz'
+CODE_IMAGE32 = 'jinstall-ex-4200-12.3R12.4-domestic-signed.tgz'
 CODE_JSU32 = ''
 CODE_JSU64 = ''
 
@@ -50,5 +50,6 @@ POST_UPGRADE_CMDS =  ['set routing-options nonstop-routing',
                       'set protocols isis overload advertise-high-metrics',
                       'set protocols pim nonstop-routing disable',
                     ]
+
 PRE_UPGRADE_CMDS = ''
-POST_UPGRADE_CMDS =  ''
+POST_UPGRADE_CMDS = ''

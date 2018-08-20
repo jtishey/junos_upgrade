@@ -314,6 +314,8 @@ class RunUpgrade(object):
                     logging.warn('ERROR: {0}'.format(e))
                 self.dev.close()
                 exit()
+        else:
+            logging.warn("No pre-upgrade commands in CONFIG file")
 
 
     def upgrade_backup_re(self):
@@ -383,7 +385,7 @@ class RunUpgrade(object):
             re_state = xmltodict.parse(etree.tostring(
                     self.dev.rpc.get_route_engine_information()))['route-engine-information']\
                     ['route-engine'][int(backup_RE[-1])]['mastership-state']
-                
+
         # Give it 20 seconds, then check status
         time.sleep(20)
         re_status = xmltodict.parse(etree.tostring(
@@ -452,7 +454,6 @@ class RunUpgrade(object):
 
         # Request package add
         logging.warn('Upgrading device... Please Wait...')
-            
         ok = SW(self.dev).install(package=PACKAGE, validate=False, reboot=True, no_copy=True,
                         progress=True, remote_path=R_PATH)
         if not ok:    
@@ -462,8 +463,6 @@ class RunUpgrade(object):
                 self.restore_traffic()
             self.dev.close()
             exit()
-        logging.warn('sw reuslt = ' + str(ok))
-        exit()
         # Wait 2 minutes for package to install and reboot, then start checking every 30s
         time.sleep(120)
         while self.dev.probe() == False:
@@ -524,9 +523,14 @@ class RunUpgrade(object):
 
 
     def mx_network_services(self):
-        """ Check if network-services mode enhanced-ip was requested, and set, reboot if not"""
+        """ Check if network-services mode enhanced-ip was requested, and set, reboot if not
+            The reboot of both RE's was deemed nessicary by several issues where RE's were
+            rebooted one at a time and did not sync network-services mode properly        """
         if self.dev.facts['model'][:2] == 'MX':
-            if self.mx_network_services:
+            if self.set_enhanced_ip:
+                logging.warn("-----------------------------------------------------------")
+                logging.warn("| SERVICE IMPACTING REBOOT WARNING                        |")
+                logging.warn("-----------------------------------------------------------")
                 cont = input('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
                 if cont.lower() == 'y':
                     logging.warn('Rbooting ' + self.host + '... Please wait...')
@@ -539,6 +543,8 @@ class RunUpgrade(object):
                     self.dev.facts_refresh()
                     self.dev.open()
                     self.dev.facts_refresh()
+                else:
+                    logging.warn("Skipping reboot of both RE's for network-services mode...")
 
 
     def restore_traffic(self):
