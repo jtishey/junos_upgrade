@@ -11,6 +11,7 @@ from jnpr.junos.utils.scp import SCP
 from jnpr.junos.utils.sw import SW
 from jnpr.junos.utils.config import Config
 from jnpr.junos.exception import ConnectError
+import argparse
 import xmltodict
 from lxml import etree
 import json
@@ -20,43 +21,34 @@ import CONFIG
 class RunUpgrade(object):
     def __init__(self):
         self.arch = ''
-        self.image = ''
+        self.host = ''
+        self.force = False
+        self.yes_all = False
         self.username = 'guest'
         self.password = 'password'
         self.set_enhanced_ip = False
         self.two_stage = False
-        self.package = CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64
-        self.package32 = CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE32
-        self.logfile = CONFIG.CODE_LOG
 
 
     def get_arguments(self):
         """ Handle input from CLI """
-        try:
-            self.host = sys.argv[1]
-        except:
-            print("""USAGE: junos_upgrade <device_hostname>
-
-            This is a script to perform a software upgrade on a device running JUNOS.
-            1. Get CLI Input / Print Usage Info
-            2. Setup Logging / Ensure Image is on local server
-            3. Open NETCONF Connection To Device
-            4. Grab info on RE's
-            5. Check For SW Image on Device - Copy if needed
-            6. Request system snapshot
-            7. Apply pre-upgrade config commands and check network-services mode
-                8. Upgrade only RE
-                   OR
-                8. Start upgrade on backup RE 
-                9. Perform an RE Switchover
-                10. Perform upgrade on the other RE
-            11. Re-check network services mode on MX and reboot if needed
-            12. Apply post-upgrade config commands and switchover to RE0 if needed
-            """)
+        p = argparse.ArgumentParser(
+            description='Parse and compare before/after baseline files.')
+        p.add_argument('-d', '--device', help='Specify an IP or hostname to upgrade', required=True)
+        p.add_argument('-f', '--force', action='count', default=0, 
+                        help='Use "force" option on all package adds (DANGER!)', required=False)
+        p.add_argument('-y', '--yes_all', action='count', default=0,
+                        help='Answer "y" to all questions during the upgrade (DANGER!)', required=False)
+        args = vars(p.parse_args())
+        self.host = args['device']
+        if args['force']:
+            self.force - True
+        if args['yes_all']:
+            self.yes_all = True
 
 
     def initial_setup(self):
-        # initialize logging
+        """ Setup logging and check for the image on the server """
         logging.basicConfig(filename=CONFIG.CODE_LOG, level=logging.WARN,
                             format='%(asctime)s:%(name)s: %(message)s')
         logging.getLogger().name = self.host
@@ -64,13 +56,15 @@ class RunUpgrade(object):
         logging.info('Information logged in {0}'.format(CONFIG.CODE_LOG))
 
         # verify package exists on local server
-        if not (os.path.isfile(self.package)):
-            msg = 'Software package does not exist: {0}. '.format(self.package)
+        if not (os.path.isfile(CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64)):
+            msg = 'Software package does not exist: {0}. '.format(
+                                CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64)
             logging.error(msg)
             sys.exit()
 
 
     def open_connection(self):
+        """ Open a NETCONF connection to the device """
         try:
             logging.warn('Connecting to ' + self.host + '...')
             self.dev = Device(host=self.host,
@@ -84,12 +78,12 @@ class RunUpgrade(object):
 
 
     def collect_re_info(self):
-        # Print info on each RE:
+        """ Print info on each RE: """
         if self.dev.facts['RE0']:
             logging.warn('' + self.host + ' ' + self.dev.facts['model'])
             logging.warn('-' * 24)
             if self.dev.facts['version_RE0']:
-                logging.warn('             RE0  \t   RE1')
+                logging.warn('            RE0   \t   RE1')
                 logging.warn('Mastership: ' + \
                                  self.dev.facts['RE0']['mastership_state'] + '\t' + \
                                  self.dev.facts['RE1']['mastership_state'] + '')
@@ -103,7 +97,7 @@ class RunUpgrade(object):
                                  self.dev.facts['version_RE0'] + '\t' + \
                                  self.dev.facts['version_RE1'] + '')
             else:
-                logging.warn('               RE0  ')
+                logging.warn('              RE0  ')
                 logging.warn('Mastership: ' + \
                                  self.dev.facts['RE0']['mastership_state'] + '')
                 logging.warn('Status:     ' + \
@@ -117,19 +111,18 @@ class RunUpgrade(object):
             # Check for redundant REs
             logging.warn('Checking for redundant routing-engines...')
             if not self.dev.facts['2RE']:
-                re_stop = input("Redundant RE's not found, Continue? (y/n): ")
-                if re_stop.lower() != 'y':
-                    self.dev.close()
-                    exit()
+                if not self.yes_all:
+                    re_stop = input("Redundant RE's not found, Continue? (y/n): ")
+                    if re_stop.lower() != 'y':
+                        self.dev.close()
+                        exit()
+                else:
+                    logging.warn("Redundant RE's not found...")
 
       
     def copy_image(self, source, dest):
         """ Copy files via SCP """
-        cont = input('Image not found on active RE, copy it now? (y/n): ')
-        if cont.lower() != 'y':
-            logging.warn('Exiting...')
-            self.dev.close()
-            exit()
+        logging.warn("Image not found on active RE, copying now...")
         try:
             with SCP(self.dev, progress=True) as scp:
                 logging.warn("Copying image to " + dest + "...")
@@ -154,8 +147,8 @@ class RunUpgrade(object):
         elif '32-bit' in version_info:
             self.arch = '32-bit'
         else:
-            logging.warn("1. 32-bit Image")
-            logging.warn("2. 64-bit Image")
+            logging.warn("1. 32-bit Image - " + str(CONFIG.CODE_IMAGE32))
+            logging.warn("2. 64-bit Image - " + str(CONFIG.CODE_IMAGE64))
             image_type = input("Select Image Type (1/2): ")
             if image_type == '1':
                 self.arch = '32-bit'
@@ -277,10 +270,13 @@ class RunUpgrade(object):
                 cur_mode = net_mode['network-services']['network-services-information']['name']
                 if cur_mode != 'Enhanced-IP':
                     logging.warn('Network Services mode is ' + cur_mode + '')
-                    cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
-                    if cont.lower() == 'y':
-                        config_cmds.append('set chassis network-services enhanced-ip')
-                        # Set a flag to recheck at the end and reboot if needed:
+                    if not self.yes_all:
+                        cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
+                        if cont.lower() == 'y':
+                            config_cmds.append('set chassis network-services enhanced-ip')
+                            # Set a flag to recheck at the end and reboot if needed:
+                            self.set_enhanced_ip = True
+                    else:
                         self.set_enhanced_ip = True
 
             # Make configuration changes
@@ -295,17 +291,25 @@ class RunUpgrade(object):
                     logging.warn('-' * 24)
                     cu.pdiff()
                     if cu.diff():
-                        cont = input('Commit Changes? (y/n): ')
-                        if cont.lower() != 'y':
-                            logging.warn('Rolling back changes...')
-                            cu.rollback(rb_id=0)
-                            exit()
+                        if not self.yes_all:
+                            cont = input('Commit Changes? (y/n): ')
+                            if cont.lower() != 'y':
+                                logging.warn('Rolling back changes...')
+                                cu.rollback(rb_id=0)
+                                exit()
+                            else:
+                                cu.commit()
                         else:
+                            logging.warn('Committing changes...')
                             cu.commit()
                     else:
-                        cont = input('No changes found to commit.  Continue upgrading router? (y/n): ')
-                        if cont.lower() != 'y':
-                            exit()
+                        if not self.yes_all:
+                            cont = input('No changes found to commit.  Continue upgrading router? (y/n): ')
+                            if cont.lower() != 'y':
+                                exit()
+                        else:
+                            logging.warn('No changes found to commit...')
+
             except RuntimeError as e:
                 if "Ex: format='set'" in str(e):
                     logging.warn('ERROR: Unable to parse the PRE_UPGRADE_CMDS')
@@ -320,13 +324,14 @@ class RunUpgrade(object):
 
     def upgrade_backup_re(self):
         """ Cycle through installing packcages for Dual RE systems """
-        cont = input("Continue with software add / reboot on backup RE? (y/n): ")
-        if cont.lower() != 'y':
-            res = input('Restore config changes before exiting? (y/n): ')
-            if res.lower() == 'y':
-                self.restore_traffic()
-            self.dev.close()
-            exit()
+        if not self.yes_all:
+            cont = input("Continue with software add / reboot on backup RE? (y/n): ")
+            if cont.lower() != 'y':
+                res = input('Restore config changes before exiting? (y/n): ')
+                if res.lower() == 'y':
+                    self.restore_traffic()
+                self.dev.close()
+                exit()
         # First Stage Upgrade
         if self.two_stage:
             self.backup_re_pkg_add(CONFIG.CODE_2STAGE32, CONFIG.CODE_2STAGE64, CONFIG.CODE_PRESERVE)
@@ -367,12 +372,16 @@ class RunUpgrade(object):
         # Add package and reboot the backup RE
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
         ok = SW(self.dev).install(package=PACKAGE, validate=False, reboot=True, no_copy=True,
-                        progress=True, all_re=False, re0=RE0, re1=RE1, remote_path=R_PATH)
+                                  progress=True, all_re=False, re0=RE0, re1=RE1,
+                                  remote_path=R_PATH, force=self.force)
 
         if not ok:
             logging.warn('Encountered issues with software add...  Exiting')
-            cont = input('Rollback configuration changes? (y/n): ')
-            if cont.lower() == 'y':
+            if not self.yes_all:
+                cont = input('Rollback configuration changes? (y/n): ')
+                if cont.lower() == 'y':
+                    self.restore_traffic()
+            else:
                 self.restore_traffic()
             self.dev.close()
             exit()
@@ -409,11 +418,12 @@ class RunUpgrade(object):
         for item in core_dump['multi-routing-engine-results']['multi-routing-engine-item']['directory-list']['output']:
             if 'No such file' not in item:
                 logging.warn('Found Core Dumps!  Please investigate.')
-                logging.warn(item + "")
-                cont = input("Continue with upgrade? (y/n): ")
-                if cont.lower() != 'y':
-                    self.dev.close()
-                    exit()
+                logging.warn(item)
+                if not self.yes_all:
+                    cont = input("Continue with upgrade? (y/n): ")
+                    if cont.lower() != 'y':
+                        self.dev.close()
+                        exit()
         # Check SW Version:
         logging.warn(backup_RE + ' software version = ' + \
             sw_version['multi-routing-engine-results']['multi-routing-engine-item']['software-information']['junos-version'])
@@ -424,13 +434,15 @@ class RunUpgrade(object):
         logging.warn("-----------------------------------------------------------")
         logging.warn("|  Ready to upgrade, THIS WILL BE SERVICE IMPACTING!!!    |")
         logging.warn("-----------------------------------------------------------")
-        cont = input("Continue with software add / reboot? (y/n): ")
-        if cont.lower() != 'y':
-            res = input('Restore config changes before exiting? (y/n): ')
-            if res.lower() == 'y':
-                self.restore_traffic()
-            self.dev.close()
-            exit() 
+        if not self.yes_all:
+            cont = input("Continue with software add / reboot? (y/n): ")
+            if cont.lower() != 'y':
+                res = input('Restore config changes before exiting? (y/n): ')
+                if res.lower() == 'y':
+                    self.restore_traffic()
+                self.dev.close()
+                exit()
+
         # First Stage Upgrade
         if self.two_stage:
             self.single_re_pkg_add(CONFIG.CODE_2STAGE32, CONFIG.CODE_2STAGE64, CONFIG.CODE_PRESERVE)
@@ -448,21 +460,41 @@ class RunUpgrade(object):
         """ Perform software add and reboot the RE / Device """
         self.dev.timeout = 3600
         if self.arch == '32-bit':
-            PACKAGE = PKG32
+            PACKAGE = CONFIG.CODE_DEST + PKG32
         else:
-            PACKAGE = PKG64
+            PACKAGE = CONFIG.CODE_DEST + PKG64
 
         # Request package add
+        # Had issues w/utils.sw install, so im using the rpc call
         logging.warn('Upgrading device... Please Wait...')
-        ok = SW(self.dev).install(package=PACKAGE, validate=False, reboot=True, no_copy=True,
-                        progress=True, remote_path=R_PATH)
-        if not ok:    
+        rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True, package_name=PACKAGE)
+        # Check to see if the package add succeeded:
+        ok = True
+        got = rsp.getparent()
+        for o in got.findall('output'):
+            logging.warn(o.text)
+        package_result = got.findall('package-result')
+        
+        for result in package_result:
+            if result.text != '0':
+                logging.warn('Pkgadd result ' + result.text)
+                ok = False
+        self.dev.timeout = 30
+        if not ok:
             logging.warn('Encountered issues with software add...  Exiting')
-            cont = input("Restore configuration before exiting? (y/n): ")
-            if cont.lower() == 'y':
+            if not self.yes_all:
+                cont = input("Restore configuration before exiting? (y/n): ")
+                if cont.lower() == 'y':
+                    self.restore_traffic()
+                self.dev.close()
+                exit()
+            else:
+                logging.warn('Restoring configuration before exiting...')
                 self.restore_traffic()
-            self.dev.close()
-            exit()
+                self.dev.close()
+                exit()
+
+        logging.warn("Rebooting Device, this may take a while...")
         # Wait 2 minutes for package to install and reboot, then start checking every 30s
         time.sleep(120)
         while self.dev.probe() == False:
@@ -480,10 +512,11 @@ class RunUpgrade(object):
             if 'No such file' not in item:
                 logging.warn('Found Core Dumps!  Please investigate.')
                 logging.warn(item)
-                cont = input("Continue with upgrade? (y/n): ")
-                if cont.lower() != 'y':
-                    self.dev.close()
-                    exit()
+                if not self.yes_all:
+                    cont = input("Continue with upgrade? (y/n): ")
+                    if cont.lower() != 'y':
+                        self.dev.close()
+                        exit()
         # Check SW Version:
         logging.warn('SW Version: ' + self.dev.facts['version'] + '')
 
@@ -494,11 +527,12 @@ class RunUpgrade(object):
             logging.warn("-----------------------------------------------------------")
             logging.warn("|  Switch to backup RE, THIS WILL BE SERVICE IMPACTING!!! |")
             logging.warn("-----------------------------------------------------------")
-            cont = input('Continue with switchover? (y/n): ')
-            if cont.lower() != 'y':
-                logging.warn("Exiting...")
-                self.dev.close()
-                exit()
+            if not self.yes_all:
+                cont = input('Continue with switchover? (y/n): ')
+                if cont.lower() != 'y':
+                    logging.warn("Exiting...")
+                    self.dev.close()
+                    exit()
             
             # Using dev.cli because I couldn't find an RPC call for switchover
             self.dev.timeout = 20
@@ -531,8 +565,22 @@ class RunUpgrade(object):
                 logging.warn("-----------------------------------------------------------")
                 logging.warn("| SERVICE IMPACTING REBOOT WARNING                        |")
                 logging.warn("-----------------------------------------------------------")
-                cont = input('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
-                if cont.lower() == 'y':
+                if not self.yes_all:
+                    cont = input('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
+                    if cont.lower() != 'y':
+                        logging.warn("Skipping reboot of both RE's for network-services mode...")
+                    else:
+                        logging.warn('Rbooting ' + self.host + '... Please wait...')
+                        self.dev.timeout = 3600
+                        self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
+                        # Wait 2 minutes for reboot, then start checking every 30s
+                        time.sleep(120)
+                        while self.dev.probe() == False:
+                            time.sleep(30)
+                        self.dev.facts_refresh()
+                        self.dev.open()
+                        self.dev.facts_refresh()
+                else:
                     logging.warn('Rbooting ' + self.host + '... Please wait...')
                     self.dev.timeout = 3600
                     self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
@@ -543,8 +591,6 @@ class RunUpgrade(object):
                     self.dev.facts_refresh()
                     self.dev.open()
                     self.dev.facts_refresh()
-                else:
-                    logging.warn("Skipping reboot of both RE's for network-services mode...")
 
 
     def restore_traffic(self):
@@ -563,24 +609,32 @@ class RunUpgrade(object):
         logging.warn('Restoring configruation...')
         config_cmds = CONFIG.POST_UPGRADE_CMDS
 
-        with Config(self.dev, mode='exclusive') as cu:
-            for cmd in config_cmds:
-                cu.load(cmd, merge=True, ignore_warning=True)
-            logging.warn("Configuration Changes:")
-            logging.warn('-' * 24)
-            cu.pdiff()
-            if cu.diff():
-                cont = input('Commit Changes? (y/n): ')
-                if cont.lower() != 'y':
-                    logging.warn('Rolling back changes...')
-                    cu.rollback(rb_id=0)
-                    exit()
+        if config_cmds:
+            with Config(self.dev, mode='exclusive') as cu:
+                for cmd in config_cmds:
+                    cu.load(cmd, merge=True, ignore_warning=True)
+                logging.warn("Configuration Changes:")
+                logging.warn('-' * 24)
+                cu.pdiff()
+                if cu.diff():
+                    if not self.yes_all:
+                        cont = input('Commit Changes? (y/n): ')
+                        if cont.lower() != 'y':
+                            logging.warn('Rolling back changes...')
+                            cu.rollback(rb_id=0)
+                            exit()
+                        else:
+                            cu.commit()
+                    else:
+                        logging.warn('Committing Changes...')
+                        cu.commit()
                 else:
-                    cu.commit()
-            else:
-                cont = input('No changes found to commit...')
-        
-        
+                    logging.warn('No changes found to commit...')
+        else:
+            logging.warn("No post-upgrade commands in CONFIG file")
+
+
+
     def switch_to_master(self):
         """ Switch back to the default master - RE0 """
         # Add a check for task replication
@@ -600,8 +654,19 @@ class RunUpgrade(object):
 
             # Check which RE is active and switchover if needed
             if self.dev.facts['re_master']['default'] == '1':
-                cont = input('Task replication complete, switchover to RE0? (y/n): ')
-                if cont.lower() == 'y':
+                if not self.yes_all:
+                    cont = input('Task replication complete, switchover to RE0? (y/n): ')
+                    if cont.lower() == 'y':
+                        self.dev.timeout = 20
+                        logging.warn("Performing final switchover to RE0...")
+                        self.dev.cli('request chassis routing-engine master switch no-confirm')
+                        time.sleep(15)
+                        while self.dev.probe() == False:
+                            time.sleep(10)
+                        self.dev.facts_refresh()
+                        self.dev.open()
+                        self.dev.facts_refresh()
+                else:
                     self.dev.timeout = 20
                     logging.warn("Performing final switchover to RE0...")
                     self.dev.cli('request chassis routing-engine master switch no-confirm')
@@ -611,7 +676,6 @@ class RunUpgrade(object):
                     self.dev.facts_refresh()
                     self.dev.open()
                     self.dev.facts_refresh()
-
 
 
 execute = RunUpgrade()
