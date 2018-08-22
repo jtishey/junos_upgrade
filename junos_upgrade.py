@@ -301,7 +301,7 @@ class RunUpgrade(object):
         
         # PIM nonstop-routing must be removed if it's there to deactivate GRES
         pim = self.dev.rpc.get_config(filter_xml='<protocols><pim><nonstop-routing/></pim></protocols>')
-        if len(c) > 0:
+        if len(pim) > 0:
             config_cmds.append('deactivate protocols pim nonstop-routing')
             # set a flag so we konw to turn it back on at the end
             self.pim_nonstop = True
