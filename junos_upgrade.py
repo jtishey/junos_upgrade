@@ -8,7 +8,6 @@
 import os, sys, logging, time
 from jnpr.junos import Device
 from jnpr.junos.utils.scp import SCP
-from jnpr.junos.utils.sw import SW
 from jnpr.junos.utils.config import Config
 from jnpr.junos.exception import ConnectError
 import argparse
@@ -27,6 +26,7 @@ class RunUpgrade(object):
         self.username = 'guest'
         self.password = 'password'
         self.set_enhanced_ip = False
+        self.pim_nonstop = False
         self.two_stage = False
 
 
@@ -136,99 +136,114 @@ class RunUpgrade(object):
 
     def image_check(self):
         """ Check to make sure needed files are on the device and copy if needed,
-            Currently only able to copy to the active RE """
-        # Determine 32-bit or 64-bit:
-        logging.warn('Checking for 32 or 64-bit code...')
-        ver = xmltodict.parse(etree.tostring(
-               self.dev.rpc.get_software_information(detail=True)))
-        version_info = json.dumps(ver)
-        if '64-bit' in version_info:
+            Currently only able to copy to the active RE 
+        """
+        # List of 64-bit capable RE's:
+        RE_64 = ['RE-S-1800x2-8G',
+                 'RE-S-1800x2-16G',
+                 'RE-S-1800x4-8G',
+                 'RE-S-1800x4-16G']
+        
+        if self.dev.facts['RE0']['model'] in RE_64:
             self.arch = '64-bit'
-        elif '32-bit' in version_info:
-            self.arch = '32-bit'
         else:
-            logging.warn("1. 32-bit Image - " + str(CONFIG.CODE_IMAGE32))
-            logging.warn("2. 64-bit Image - " + str(CONFIG.CODE_IMAGE64))
-            image_type = input("Select Image Type (1/2): ")
-            if image_type == '1':
-                self.arch = '32-bit'
-                logging.warn('32-bit Code Selected')
-            elif image_type == '2':
+            # Determine 32-bit or 64-bit:
+            logging.warn('Checking for 32 or 64-bit code...')
+            ver = xmltodict.parse(etree.tostring(
+                   self.dev.rpc.get_software_information(detail=True)))
+            version_info = json.dumps(ver)
+            if '64-bit' in version_info:
                 self.arch = '64-bit'
-                logging.warn('64-bit Code Selected')
+            elif '32-bit' in version_info:
+                self.arch = '32-bit'
             else:
-                logging.warn("Please enter only 1 or 2")
-                self.image_check()
-                return
+                logging.warn("1. 32-bit Image - " + str(CONFIG.CODE_IMAGE32))
+                logging.warn("2. 64-bit Image - " + str(CONFIG.CODE_IMAGE64))
+                image_type = input("Select Image Type (1/2): ")
+                if image_type == '1':
+                    self.arch = '32-bit'
+                    logging.warn('32-bit Code Selected')
+                elif image_type == '2':
+                    self.arch = '64-bit'
+                    logging.warn('64-bit Code Selected')
+                else:
+                    logging.warn("Please enter only 1 or 2")
+                    self.image_check()
+                    return
 
+        # Are we doing a two-stage upgrade? (Reqd for >3 major version change)
+        if CONFIG.CODE_2STAGE32 or CONFIG.CODE_2STAGE64:
+            if self.dev.facts['version'][:2] == CONFIG.CODE_2STAGEFOR:
+                logging.warn('Two-Stage Upgrade will be performed...')
+                self.two_stage = True
+        
         # Define all the file names / paths
         if self.arch == '32-bit':
             source = CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE32
-            dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE32
             source_2stg = CONFIG.CODE_FOLDER + CONFIG.CODE_2STAGE32
-            dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_2STAGE32
             source_jsu = CONFIG.CODE_FOLDER + CONFIG.CODE_JSU32
-            dest_jsu = CONFIG.CODE_DEST + CONFIG.CODE_JSU32
+            if self.two_stage:
+                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_IMAGE32
+                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_2STAGE32
+                dest_jsu = CONFIG.CODE_PRESERVE + CONFIG.CODE_JSU32
+            else:
+                dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE32
+                dest_jsu = CONFIG.CODE_DEST + CONFIG.CODE_JSU32            
         elif self.arch == '64-bit':
             source = CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64
-            dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE64
             source_2stg = CONFIG.CODE_FOLDER + CONFIG.CODE_2STAGE64
-            dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_2STAGE64
             source_jsu = CONFIG.CODE_FOLDER + CONFIG.CODE_JSU64
-            dest_jsu = CONFIG.CODE_DEST + CONFIG.CODE_JSU64
-        
+            if self.two_stage:
+                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_IMAGE64
+                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_2STAGE64
+                dest_jsu = CONFIG.CODE_PRESERVE + CONFIG.CODE_JSU64
+            else:
+                dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE64
+                dest_jsu = CONFIG.CODE_DEST + CONFIG.CODE_JSU64     
+
         # Check for final software image on the device
         logging.warn('Checking for image on the active RE...')
         img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest)))
         img_output = json.dumps(img)
-        # If image file does not exit - copy from server
         if 'No such file' in img_output:
             self.copy_image(source, dest)
-    
+
         # If dual RE - Check backup RE too
         if self.dev.facts['2RE']:
             if self.dev.facts['master'] == 'RE0':
                 backup_RE = 're1:/'
             else:
                 backup_RE = 're0:/'
-
-            # Check for final image file on backup RE
             logging.warn('Checking for image on the backup RE...')
             img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=backup_RE + dest)))
             img_output = json.dumps(img)
-            # Cant copy to backup RE remotely, semd message and quit
             if 'No such file' in img_output:
-                msg = 'file copy ' + source + ' ' + backup_RE + dest
+                msg = 'file copy ' + dest + ' ' + backup_RE + dest
                 logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
                 logging.warn('CMD  : ' + msg)
                 self.dev.close()
                 exit()
 
         # If 2 stage upgrade, look for intermediate image
-        if CONFIG.CODE_2STAGE32 or CONFIG.CODE_2STAGE64:
-            if self.dev.facts['version'][:2] == CONFIG.CODE_2STAGEFOR:
-                logging.warn('Two-Stage Upgrade will be performed...')
-                self.two_stage = True
+        if self.two_stage:
+            logging.warn('Checking for 2-stage image on the active RE...')
+            img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_2stg)))                
+            img_output = json.dumps(img)
+            if 'No such file' in img_output:
+                self.copy_image(source_2stg, dest_2stg)
 
-                # If file does not exist on the active RE, copy it now?
-                logging.warn('Checking for 2-stage image on the active RE...')
-                img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_2stg)))                
+            # Check for intermediate image file on backup RE
+            if self.dev.facts['2RE']:
+                logging.warn('Checking for 2-stage image on the backup RE...')
+                img = xmltodict.parse(etree.tostring(
+                        self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
-                    self.copy_image(source_2stg, dest_2stg)
-
-                # Check for intermediate image file on backup RE
-                if self.dev.facts['2RE']:
-                    logging.warn('Checking for 2-stage image on the backup RE...')
-                    img = xmltodict.parse(etree.tostring(
-                            self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
-                    img_output = json.dumps(img)
-                    if 'No such file' in img_output:
-                        msg = 'file copy ' + source_2stg + ' ' + backup_RE + dest_2stg
-                        logging.warn('ERROR: Copy the intermediate image to the backup RE, then re-run script')
-                        logging.warn('CMD  : ' + msg)
-                        self.dev.close()
-                        exit()
+                    msg = 'file copy ' + dest_2stg + ' ' + backup_RE + dest_2stg
+                    logging.warn('ERROR: Copy the intermediate image to the backup RE, then re-run script')
+                    logging.warn('CMD  : ' + msg)
+                    self.dev.close()
+                    exit()
 
         # Check if JSU Install is requested
         if CONFIG.CODE_JSU32 or CONFIG.CODE_JSU64:
@@ -246,7 +261,7 @@ class RunUpgrade(object):
                         self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
-                    msg = 'file copy ' + source_jsu + ' ' + backup_RE + dest_jsu
+                    msg = 'file copy ' + dest_jsu + ' ' + backup_RE + dest_jsu
                     logging.warn('ERROR: Copy the JSU to the backup RE, then re-run script')
                     logging.warn('CMD  : ' + msg)
                     self.dev.close()
@@ -260,26 +275,39 @@ class RunUpgrade(object):
 
 
     def remove_traffic(self):
-        """ Removes chassis redundancy and PIM NSR disable, as well as  overrides ISIS  """
+        """ Execute the PRE_UPGRADE_CMDS from the CONFIG.py file to remove traffic """
         config_cmds = CONFIG.PRE_UPGRADE_CMDS
+        if type(config_cmds) != 'list':
+            logging.warn("CONFIG.py Error: PRE_UPGRADE_CMDS in CONFIG.py must be a list")
+            logging.warn("Ex. ['set something', 'set something else']")
+            logging.warn("Please correct and re-run the script")
+            self.dev.close()
+            exit()
+        
         # Network Service check on MX Platform
-        if config_cmds:
-            if self.dev.facts['model'][:2] == 'MX':
-                net_mode = xmltodict.parse(etree.tostring(
-                            self.dev.rpc.network_services()))
-                cur_mode = net_mode['network-services']['network-services-information']['name']
-                if cur_mode != 'Enhanced-IP':
-                    logging.warn('Network Services mode is ' + cur_mode + '')
-                    if not self.yes_all:
-                        cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
-                        if cont.lower() == 'y':
-                            config_cmds.append('set chassis network-services enhanced-ip')
-                            # Set a flag to recheck at the end and reboot if needed:
-                            self.set_enhanced_ip = True
-                    else:
+        if self.dev.facts['model'][:2] == 'MX':
+            net_mode = xmltodict.parse(etree.tostring(
+                        self.dev.rpc.network_services()))
+            cur_mode = net_mode['network-services']['network-services-information']['name']
+            if cur_mode != 'Enhanced-IP':
+                logging.warn('Network Services mode is ' + cur_mode + '')
+                if not self.yes_all:
+                    cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
+                    if cont.lower() == 'y':
+                        # Set a flag to recheck at the end and reboot if needed:
                         self.set_enhanced_ip = True
-
-            # Make configuration changes
+                else:
+                    self.set_enhanced_ip = True
+        
+        # PIM nonstop-routing must be removed if it's there to deactivate GRES
+        pim = self.dev.rpc.get_config(filter_xml='<protocols><pim><nonstop-routing/></pim></protocols>')
+        if len(c) > 0:
+            config_cmds.append('deactivate protocols pim nonstop-routing')
+            # set a flag so we konw to turn it back on at the end
+            self.pim_nonstop = True
+        
+        # Make configuration changes
+        if config_cmds:
             logging.warn('Entering Configuration Mode...')
             logging.warn('-' * 24)
 
@@ -365,16 +393,36 @@ class RunUpgrade(object):
 
         # Assign package path and name
         if self.arch == '32-bit':
-            PACKAGE = PKG32
+            PACKAGE = CONFIG.CODE_DEST + PKG32
         else:
-            PACKAGE = PKG64
+            PACKAGE = CONFIG.CODE_DEST + PKG64
+
+        # Change flags for JSU vs JINSTALL Package:
+        if 'jselective' in PACKAGE:
+            NO_VALIDATE, REBOOT = False, False
+        else:
+            NO_VALIDATE, REBOOT = True, True
 
         # Add package and reboot the backup RE
+        # Had issues w/utils.sw install, so im using the rpc call
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
-        ok = SW(self.dev).install(package=PACKAGE, validate=False, reboot=True, no_copy=True,
-                                  progress=True, all_re=False, re0=RE0, re1=RE1,
-                                  remote_path=R_PATH, force=self.force)
+        rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
+                                               no_validate=NO_VALIDATE,
+                                               package_name=PACKAGE,
+                                               re0=RE0, re1=RE1,
+                                               force=self.force)
 
+        # Check to see if the package add succeeded:
+        ok = True
+        got = rsp.getparent()
+        for o in got.findall('output'):
+            logging.warn(o.text)
+        package_result = got.findall('package-result')
+        for result in package_result:
+            if result.text != '0':
+                logging.warn('Pkgadd result ' + result.text)
+                ok = False
+        self.dev.timeout = 30
         if not ok:
             logging.warn('Encountered issues with software add...  Exiting')
             if not self.yes_all:
@@ -464,17 +512,26 @@ class RunUpgrade(object):
         else:
             PACKAGE = CONFIG.CODE_DEST + PKG64
 
+        # Change flags for JSU vs JINSTALL Package:
+        if 'jselective' in PACKAGE:
+            NO_VALIDATE, REBOOT = False, False
+        else:
+            NO_VALIDATE, REBOOT = True, True
+
         # Request package add
-        # Had issues w/utils.sw install, so im using the rpc call
+        # Had issues w/utils.sw install, so im using the rpc call instead
         logging.warn('Upgrading device... Please Wait...')
-        rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True, package_name=PACKAGE)
+        rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
+                                               no_validate=NO_VALIDATE,
+                                               package_name=PACKAGE,
+                                               force=self.force)
+        
         # Check to see if the package add succeeded:
         ok = True
         got = rsp.getparent()
         for o in got.findall('output'):
             logging.warn(o.text)
         package_result = got.findall('package-result')
-        
         for result in package_result:
             if result.text != '0':
                 logging.warn('Pkgadd result ' + result.text)
@@ -562,26 +619,29 @@ class RunUpgrade(object):
             rebooted one at a time and did not sync network-services mode properly        """
         if self.dev.facts['model'][:2] == 'MX':
             if self.set_enhanced_ip:
+                logging.warn("Setting chassis network-servies enhanced-ip...")
+                try:
+                    with Config(self.dev, mode='exclusive') as cu:
+                        cu.load('set chassis network-services enhanced-ip',
+                                 merge=True, ignore_warning=True)
+                        cu.commit()
+                except:
+                    logging.warn('Error commtitting "set chassis network-services enhanced-ip"')
+                    logging.warn('Device will not be rebooted, please check error configuring enhanced-ip')
+                
                 logging.warn("-----------------------------------------------------------")
                 logging.warn("| SERVICE IMPACTING REBOOT WARNING                        |")
                 logging.warn("-----------------------------------------------------------")
+
+                cont = 'n'
                 if not self.yes_all:
                     cont = input('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
-                    if cont.lower() != 'y':
-                        logging.warn("Skipping reboot of both RE's for network-services mode...")
-                    else:
-                        logging.warn('Rbooting ' + self.host + '... Please wait...')
-                        self.dev.timeout = 3600
-                        self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
-                        # Wait 2 minutes for reboot, then start checking every 30s
-                        time.sleep(120)
-                        while self.dev.probe() == False:
-                            time.sleep(30)
-                        self.dev.facts_refresh()
-                        self.dev.open()
-                        self.dev.facts_refresh()
                 else:
-                    logging.warn('Rbooting ' + self.host + '... Please wait...')
+                    cont = 'y'
+                if cont.lower() != 'y':
+                    logging.warn("Skipping reboot of both RE's for network-services mode...")
+                else:
+                    logging.warn('Rebooting ' + self.host + '... Please wait...')
                     self.dev.timeout = 3600
                     self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
                     # Wait 2 minutes for reboot, then start checking every 30s
@@ -596,8 +656,8 @@ class RunUpgrade(object):
     def restore_traffic(self):
         """ Verify version, restore config, and wait for replication on dualRE """
         # Check SW Version:
+        self.dev.facts_refresh()
         if self.dev.facts['2RE']:
-            self.collect_re_info()
             if self.dev.facts['version_RE0'] == self.dev.facts['version_RE1']:
                 logging.warn('Version matches on both routing engines.')
             else:
@@ -608,6 +668,10 @@ class RunUpgrade(object):
 
         logging.warn('Restoring configruation...')
         config_cmds = CONFIG.POST_UPGRADE_CMDS
+
+        # If pim nonstop-routing was deactivated, re-activate it
+        if self.pim_nonstop:
+            config_cmds.append('activate protocols pim nonstop-routing')
 
         if config_cmds:
             with Config(self.dev, mode='exclusive') as cu:
