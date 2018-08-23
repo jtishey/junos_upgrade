@@ -609,24 +609,6 @@ class RunUpgrade(object):
             self.dev.open()
             self.dev.facts_refresh()
 
-            # Add a check for task replication
-            logging.warn('Checking task replication...')
-            task_sync = False
-            waiting_on = ''
-            while task_sync == False:
-                rep = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.get_routing_task_replication_state()))
-                task_sync = True
-                for i, item in enumerate(rep['task-replication-state']['task-protocol-replication-state']):
-                    if item != 'Complete':
-                        proto = rep['task-replication-state']['task-protocol-replication-name'][i]
-                        if waiting_on != proto:
-                            task_sync = False
-                            logging.warn(proto + ': ' + item + '... Waiting...')
-                        waiting_on = proto
-                if task_sync == False:
-                    time.sleep(120)
-
 
     def mx_network_services(self):
         """ Check if network-services mode enhanced-ip was requested, and set, reboot if not
@@ -796,6 +778,8 @@ execute.mx_network_services()
 execute.restore_traffic()
 #13. Switch back to RE0
 execute.switch_to_master()
+#14. Request system snapshot
+execute.system_snapshot()
 
 execute.dev.close()
 logging.warn("Upgrade script complete, have a nice day!")
