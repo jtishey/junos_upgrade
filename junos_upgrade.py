@@ -13,6 +13,7 @@ from jnpr.junos.exception import ConnectError
 import argparse
 import xmltodict
 from lxml import etree
+from ltoken import ltoken
 import json
 import CONFIG
 
@@ -21,10 +22,9 @@ class RunUpgrade(object):
     def __init__(self):
         self.arch = ''
         self.host = ''
+        self.auth = ltoken()
         self.force = False
         self.yes_all = False
-        self.username = 'guest'
-        self.password = 'password'
         self.set_enhanced_ip = False
         self.pim_nonstop = False
         self.two_stage = False
@@ -68,8 +68,8 @@ class RunUpgrade(object):
         try:
             logging.warn('Connecting to ' + self.host + '...')
             self.dev = Device(host=self.host,
-                              user=self.username,
-                              password=self.password,
+                              user=self.auth['username'],
+                              password=self.auth['password'],
                               gather_facts=True)
             self.dev.open()
         except ConnectError as e:
@@ -154,22 +154,10 @@ class RunUpgrade(object):
             version_info = json.dumps(ver)
             if '64-bit' in version_info:
                 self.arch = '64-bit'
-            elif '32-bit' in version_info:
-                self.arch = '32-bit'
+                logging.warn("Using 64-bit Image...")
             else:
-                logging.warn("1. 32-bit Image - " + str(CONFIG.CODE_IMAGE32))
-                logging.warn("2. 64-bit Image - " + str(CONFIG.CODE_IMAGE64))
-                image_type = input("Select Image Type (1/2): ")
-                if image_type == '1':
-                    self.arch = '32-bit'
-                    logging.warn('32-bit Code Selected')
-                elif image_type == '2':
-                    self.arch = '64-bit'
-                    logging.warn('64-bit Code Selected')
-                else:
-                    logging.warn("Please enter only 1 or 2")
-                    self.image_check()
-                    return
+                self.arch = '32-bit'
+                logging.warn("Using 32-bit Image...")
 
         # Are we doing a two-stage upgrade? (Reqd for >3 major version change)
         if CONFIG.CODE_2STAGE32 or CONFIG.CODE_2STAGE64:
@@ -270,8 +258,22 @@ class RunUpgrade(object):
 
     def system_snapshot(self):
         """ Performs [request system snapshot] on the device """
-        logging.warn('Requesting system snapshot...')
-        self.dev.rpc.request_snapshot()
+        logging.warn('Requesting system snapshot on RE0...')
+        snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
+        try:
+            msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['output']
+        except:
+            msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['snapshot-information']['error']['message']
+        logging.warn(msg)
+
+        if self.dev.facts['2RE']:
+            logging.warn('Requesting system snapshot on RE1...')
+            snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re1=True)))
+            try:
+                msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['output'])
+            except:
+                msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['snapshot-information']['error']
+            logging.warn(msg)
 
 
     def remove_traffic(self):
@@ -286,18 +288,27 @@ class RunUpgrade(object):
         
         # Network Service check on MX Platform
         if self.dev.facts['model'][:2] == 'MX':
+            logging.warn("Checking for network-services enhanced-ip...")
             net_mode = xmltodict.parse(etree.tostring(
                         self.dev.rpc.network_services()))
             cur_mode = net_mode['network-services']['network-services-information']['name']
             if cur_mode != 'Enhanced-IP':
-                logging.warn('Network Services mode is ' + cur_mode + '')
-                if not self.yes_all:
-                    cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
-                    if cont.lower() == 'y':
-                        # Set a flag to recheck at the end and reboot if needed:
-                        self.set_enhanced_ip = True
-                else:
-                    self.set_enhanced_ip = True
+                # Check for DPCs
+                logging.warn("Checking for any installed DPCs...")
+                hw = xmltodict.parse(etree.tostring(
+                        self.dev.rpc.get_chassis_inventory(models=True)))
+                for item in hw['chassis-inventory']['chassis']['chassis-module']:
+                    if item['description'][:3] == 'DPC':
+                        logging.warn("Chassis has DPCs installed, skipping network-services change")
+                    else:
+                        logging.warn('Network Services mode is ' + cur_mode + '')
+                        if not self.yes_all:
+                            cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
+                            if cont.lower() == 'y':
+                                # Set a flag to recheck at the end and reboot if needed:
+                                self.set_enhanced_ip = True
+                        else:
+                            self.set_enhanced_ip = True
         
         # PIM nonstop-routing must be removed if it's there to deactivate GRES
         pim = self.dev.rpc.get_config(filter_xml='<protocols><pim><nonstop-routing/></pim></protocols>')
@@ -393,9 +404,9 @@ class RunUpgrade(object):
 
         # Assign package path and name
         if self.arch == '32-bit':
-            PACKAGE = CONFIG.CODE_DEST + PKG32
+            PACKAGE = R_PATH + PKG32
         else:
-            PACKAGE = CONFIG.CODE_DEST + PKG64
+            PACKAGE = R_PATH + PKG64
 
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
@@ -404,7 +415,7 @@ class RunUpgrade(object):
             NO_VALIDATE, REBOOT = True, True
 
         # Add package and reboot the backup RE
-        # Had issues w/utils.sw install, so im using the rpc call
+        # Had issues w/utils.sw.install, so im using the rpc call
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
         rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
                                                no_validate=NO_VALIDATE,
@@ -414,16 +425,14 @@ class RunUpgrade(object):
 
         # Check to see if the package add succeeded:
         ok = True
-        got = rsp.getparent()
-        for o in got.findall('output'):
+        for o in rsp.getparent().findall('output'):
             logging.warn(o.text)
-        package_result = got.findall('package-result')
-        for result in package_result:
+        for result in rsp.getparent().findall('package-result'):
             if result.text != '0':
                 logging.warn('Pkgadd result ' + result.text)
                 ok = False
-        self.dev.timeout = 30
         if not ok:
+            self.dev.timeout = 30
             logging.warn('Encountered issues with software add...  Exiting')
             if not self.yes_all:
                 cont = input('Rollback configuration changes? (y/n): ')
@@ -454,13 +463,9 @@ class RunUpgrade(object):
 
         # Grab core dump and SW version info
         self.dev.facts_refresh()
-        if backup_RE == 'RE0':
-            core_dump =  xmltodict.parse(etree.tostring(self.dev.rpc.get_system_core_dumps(re0=True)))
-            sw_version = xmltodict.parse(etree.tostring(self.dev.rpc.get_software_information(re0=True)))
-        elif backup_RE == 'RE1':
-            core_dump =  xmltodict.parse(etree.tostring(self.dev.rpc.get_system_core_dumps(re1=True)))
-            sw_version = xmltodict.parse(etree.tostring(self.dev.rpc.get_software_information(re1=True)))
-
+        core_dump =  xmltodict.parse(etree.tostring(self.dev.rpc.get_system_core_dumps(re0=RE0, re1=RE1)))
+        sw_version = xmltodict.parse(etree.tostring(self.dev.rpc.get_software_information(re0=RE0, re1=RE1)))
+        
         # Check for core dumps:
         logging.warn("Checking for core dumps...")
         for item in core_dump['multi-routing-engine-results']['multi-routing-engine-item']['directory-list']['output']:
@@ -592,7 +597,7 @@ class RunUpgrade(object):
                     exit()
             
             # Using dev.cli because I couldn't find an RPC call for switchover
-            self.dev.timeout = 20
+            self.dev.timeout = 3600
             logging.warn("Performing switchover to backup RE...")
             self.dev.cli('request chassis routing-engine master switch no-confirm')
             time.sleep(15)
@@ -606,11 +611,21 @@ class RunUpgrade(object):
 
             # Add a check for task replication
             logging.warn('Checking task replication...')
-            rep = xmltodict.parse(etree.tostring(
-                    self.dev.rpc.get_routing_task_replication_state()))
-            for k, v in rep['task-replication-state'].items():
-                if v != 'Complete':
-                    logging.warn('Protocol ' + k + ' is ' + v + '')
+            task_sync = False
+            waiting_on = ''
+            while task_sync == False:
+                rep = xmltodict.parse(etree.tostring(
+                        self.dev.rpc.get_routing_task_replication_state()))
+                task_sync = True
+                for i, item in enumerate(rep['task-replication-state']['task-protocol-replication-state']):
+                    if item != 'Complete':
+                        proto = rep['task-replication-state']['task-protocol-replication-name'][i]
+                        if waiting_on != proto:
+                            task_sync = False
+                            logging.warn(proto + ': ' + item + '... Waiting...')
+                        waiting_on = proto
+                if task_sync == False:
+                    time.sleep(120)
 
 
     def mx_network_services(self):
@@ -702,19 +717,22 @@ class RunUpgrade(object):
     def switch_to_master(self):
         """ Switch back to the default master - RE0 """
         # Add a check for task replication
-        if self.dev.facts['2RE']:
-            logging.warn('Checking task replication...')
-            task_sync = False
-            while task_sync == False:
-                rep = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.get_routing_task_replication_state()))
-                task_sync = True
-                for k, v in rep['task-replication-state'].items():
-                    if v == 'InProgress':
+        logging.warn('Checking task replication...')
+        task_sync = False
+        waiting_on = ''
+        while task_sync == False:
+            rep = xmltodict.parse(etree.tostring(
+                    self.dev.rpc.get_routing_task_replication_state()))
+            task_sync = True
+            for i, item in enumerate(rep['task-replication-state']['task-protocol-replication-state']):
+                if item != 'Complete':
+                    proto = rep['task-replication-state']['task-protocol-replication-name'][i]
+                    if waiting_on != proto:
                         task_sync = False
-                        logging.warn('Protocol ' + k + ' is ' + v + '...  Waiting 2 minutes...')
-                if task_sync == False:
-                    time.sleep(120)
+                        logging.warn(proto + ': ' + item + '... Waiting...')
+                    waiting_on = proto
+            if task_sync == False:
+                time.sleep(120)
 
             # Check which RE is active and switchover if needed
             if self.dev.facts['re_master']['default'] == '1':
@@ -756,7 +774,7 @@ execute.collect_re_info()
 execute.image_check()
 # 6. Request system snapshot
 execute.system_snapshot()
-# 7. Remove Redundancy / NSR, Overload ISIS, and check for Enhanced-IP
+# 7. Remove Redundancy / NSR, Pre-Upgrade config changes
 execute.remove_traffic()
 
 # IF DEVICE IS SINGLE RE
