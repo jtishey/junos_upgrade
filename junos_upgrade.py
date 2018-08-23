@@ -408,15 +408,24 @@ class RunUpgrade(object):
             NO_VALIDATE, REBOOT = True, True
 
         # Add package and reboot the backup RE
-        # Had issues w/utils.sw.install, so im using the rpc call
+        # Had issues w/utils.sw install, so im using the rpc call instead
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
-        rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
-                                               no_validate=NO_VALIDATE,
-                                               package_name=PACKAGE,
-                                               re0=RE0, re1=RE1,
-                                               force=self.force)
+        # Change flags for JSU vs JINSTALL Package:
+        if 'jselective' in PACKAGE:
+            # Not clear if it will barf on adding an "rex=False" for the JSU yet
+            if RE0:
+                rsp = self.dev.rpc.request_package_add(package_name=PACKAGE, re0=True)
+            elif RE1:
+                rsp = self.dev.rpc.request_package_add(package_name=PACKAGE, re1=True)
+        else:
+            rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
+                                                   no_validate=NO_VALIDATE,
+                                                   package_name=PACKAGE,
+                                                   re0=RE0, re1=RE1,
+                                                   force=self.force)
 
         # Check to see if the package add succeeded:
+        logging.warn('-----------------START PKG ADD OUTPUT-----------------')
         ok = True
         for o in rsp.getparent().findall('output'):
             logging.warn(o.text)
@@ -424,6 +433,7 @@ class RunUpgrade(object):
             if result.text != '0':
                 logging.warn('Pkgadd result ' + result.text)
                 ok = False
+        logging.warn('------------------END PKG ADD OUTPUT------------------')
         if not ok:
             self.dev.timeout = 60
             logging.warn('Encountered issues with software add...  Exiting')
@@ -510,21 +520,19 @@ class RunUpgrade(object):
         else:
             PACKAGE = CONFIG.CODE_DEST + PKG64
 
-        # Change flags for JSU vs JINSTALL Package:
-        if 'jselective' in PACKAGE:
-            NO_VALIDATE, REBOOT = False, False
-        else:
-            NO_VALIDATE, REBOOT = True, True
-
-        # Request package add
         # Had issues w/utils.sw install, so im using the rpc call instead
         logging.warn('Upgrading device... Please Wait...')
-        rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
-                                               no_validate=NO_VALIDATE,
+        # Change flags for JSU vs JINSTALL Package:
+        if 'jselective' in PACKAGE:
+            rsp = self.dev.rpc.request_package_add(package_name=PACKAGE)
+        else:
+            rsp = self.dev.rpc.request_package_add(reboot=True,
+                                               no_validate=True,
                                                package_name=PACKAGE,
                                                force=self.force)
         
         # Check to see if the package add succeeded:
+        logging.warn('-----------------START PKG ADD OUTPUT-----------------')
         ok = True
         got = rsp.getparent()
         for o in got.findall('output'):
@@ -534,7 +542,8 @@ class RunUpgrade(object):
             if result.text != '0':
                 logging.warn('Pkgadd result ' + result.text)
                 ok = False
-        self.dev.timeout = 30
+        self.dev.timeout = 120
+        logging.warn('------------------END PKG ADD OUTPUT------------------')
         if not ok:
             logging.warn('Encountered issues with software add...  Exiting')
             if not self.yes_all:
@@ -614,7 +623,7 @@ class RunUpgrade(object):
                     with Config(self.dev, mode='exclusive') as cu:
                         cu.load('set chassis network-services enhanced-ip',
                                  merge=True, ignore_warning=True)
-                        cu.commit()
+                        cu.commit(sync=True, full=True)
                 except:
                     logging.warn('Error commtitting "set chassis network-services enhanced-ip"')
                     logging.warn('Device will not be rebooted, please check error configuring enhanced-ip')
@@ -678,10 +687,10 @@ class RunUpgrade(object):
                             cu.rollback(rb_id=0)
                             exit()
                         else:
-                            cu.commit()
+                            cu.commit(sync=True, full=True)
                     else:
                         logging.warn('Committing Changes...')
-                        cu.commit()
+                        cu.commit(sync=True, full=True)
                 else:
                     logging.warn('No changes found to commit...')
         else:
