@@ -83,7 +83,7 @@ class RunUpgrade(object):
             logging.warn('' + self.host + ' ' + self.dev.facts['model'])
             logging.warn('-' * 24)
             if self.dev.facts['version_RE0']:
-                logging.warn('            RE0   \t   RE1')
+                logging.warn('            RE0   \t RE1')
                 logging.warn('Mastership: ' + \
                                  self.dev.facts['RE0']['mastership_state'] + '\t' + \
                                  self.dev.facts['RE1']['mastership_state'] + '')
@@ -171,8 +171,8 @@ class RunUpgrade(object):
             source_2stg = CONFIG.CODE_FOLDER + CONFIG.CODE_2STAGE32
             source_jsu = CONFIG.CODE_FOLDER + CONFIG.CODE_JSU32
             if self.two_stage:
-                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_IMAGE32
-                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_2STAGE32
+                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_2STAGE32
+                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE32
                 dest_jsu = CONFIG.CODE_PRESERVE + CONFIG.CODE_JSU32
             else:
                 dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE32
@@ -182,8 +182,8 @@ class RunUpgrade(object):
             source_2stg = CONFIG.CODE_FOLDER + CONFIG.CODE_2STAGE64
             source_jsu = CONFIG.CODE_FOLDER + CONFIG.CODE_JSU64
             if self.two_stage:
-                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_IMAGE64
-                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_2STAGE64
+                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_2STAGE64
+                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE64
                 dest_jsu = CONFIG.CODE_PRESERVE + CONFIG.CODE_JSU64
             else:
                 dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE64
@@ -259,36 +259,26 @@ class RunUpgrade(object):
     def system_snapshot(self):
         """ Performs [request system snapshot] on the device """
         logging.warn('Requesting system snapshot on RE0...')
+        self.dev.timeout = 160
         snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
-        try:
-            msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['output']
-        except:
-            msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['snapshot-information']['error']['message']
-        logging.warn(msg)
+        if 'error' in json.dumps(snap):
+            logging.warn("Error taking snapshot... Please check device logs")
 
         if self.dev.facts['2RE']:
             logging.warn('Requesting system snapshot on RE1...')
             snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re1=True)))
-            try:
-                msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['output'])
-            except:
-                msg = snap['multi-routing-engine-results']['multi-routing-engine-item']['snapshot-information']['error']
-            logging.warn(msg)
+            if 'error' in json.dumps(snap):
+                logging.warn("Error taking snapshot... Please check device logs")
 
 
     def remove_traffic(self):
         """ Execute the PRE_UPGRADE_CMDS from the CONFIG.py file to remove traffic """
         config_cmds = CONFIG.PRE_UPGRADE_CMDS
-        if type(config_cmds) != 'list':
-            logging.warn("CONFIG.py Error: PRE_UPGRADE_CMDS in CONFIG.py must be a list")
-            logging.warn("Ex. ['set something', 'set something else']")
-            logging.warn("Please correct and re-run the script")
-            self.dev.close()
-            exit()
         
         # Network Service check on MX Platform
         if self.dev.facts['model'][:2] == 'MX':
             logging.warn("Checking for network-services enhanced-ip...")
+            dpc_flag = False
             net_mode = xmltodict.parse(etree.tostring(
                         self.dev.rpc.network_services()))
             cur_mode = net_mode['network-services']['network-services-information']['name']
@@ -299,16 +289,19 @@ class RunUpgrade(object):
                         self.dev.rpc.get_chassis_inventory(models=True)))
                 for item in hw['chassis-inventory']['chassis']['chassis-module']:
                     if item['description'][:3] == 'DPC':
-                        logging.warn("Chassis has DPCs installed, skipping network-services change")
-                    else:
-                        logging.warn('Network Services mode is ' + cur_mode + '')
-                        if not self.yes_all:
-                            cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
-                            if cont.lower() == 'y':
-                                # Set a flag to recheck at the end and reboot if needed:
-                                self.set_enhanced_ip = True
-                        else:
+                        dpc_flag = True
+                        
+                if dpc_flag:
+                    logging.warn("Chassis has DPCs installed, skipping network-services change")
+                else:
+                    logging.warn('Network Services mode is ' + cur_mode + '')
+                    if not self.yes_all:
+                        cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
+                        if cont.lower() == 'y':
+                            # Set a flag to recheck at the end and reboot if needed:
                             self.set_enhanced_ip = True
+                    else:
+                        self.set_enhanced_ip = True
         
         # PIM nonstop-routing must be removed if it's there to deactivate GRES
         pim = self.dev.rpc.get_config(filter_xml='<protocols><pim><nonstop-routing/></pim></protocols>')
@@ -432,7 +425,7 @@ class RunUpgrade(object):
                 logging.warn('Pkgadd result ' + result.text)
                 ok = False
         if not ok:
-            self.dev.timeout = 30
+            self.dev.timeout = 60
             logging.warn('Encountered issues with software add...  Exiting')
             if not self.yes_all:
                 cont = input('Rollback configuration changes? (y/n): ')
@@ -693,7 +686,6 @@ class RunUpgrade(object):
                     logging.warn('No changes found to commit...')
         else:
             logging.warn("No post-upgrade commands in CONFIG file")
-
 
 
     def switch_to_master(self):
