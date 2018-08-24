@@ -10,6 +10,7 @@ from jnpr.junos import Device
 from jnpr.junos.utils.scp import SCP
 from jnpr.junos.utils.config import Config
 from jnpr.junos.exception import ConnectError
+from netmiko import ConnectHandler
 import argparse
 import xmltodict
 from lxml import etree
@@ -133,6 +134,26 @@ class RunUpgrade(object):
             exit()
 
 
+    def copy_to_other_re(self, source, dest):
+        """
+        Use netmiko to copy files from one RE to the other because PyEZ doesnt allow this
+            :param source: source file, including re:/ prefix
+            :param dest:  destination location, including re:/ prefix
+        """
+        logging.warn("Image not found on backup RE, copying now...")
+        d = {'device_type': 'juniper',
+             'ip': self.host,
+             'username': self.auth['username'],
+             'password': self.auth['password']}
+        try:
+            net_connect = ConnectHandler(**d)
+            o = net_connect.send_command("file copy " + source + " " + dest)
+            net_connect.disconnect()
+        except:
+            logging.warn("Error copying file to other RE, Please login and do this manually")
+            logging.warn("CMD: file copy " + source + " " + dest)
+
+
     def image_check(self):
         """ Check to make sure needed files are on the device and copy if needed,
             Currently only able to copy to the active RE 
@@ -198,19 +219,24 @@ class RunUpgrade(object):
         # If dual RE - Check backup RE too
         if self.dev.facts['2RE']:
             if self.dev.facts['master'] == 'RE0':
-                backup_RE = 're1:/'
+                active_RE = 're0:'
+                backup_RE = 're1:'
             else:
-                backup_RE = 're0:/'
+                active_RE = 're1:'
+                backup_RE = 're0:'
             logging.warn('Checking for image on the backup RE...')
             img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=backup_RE + dest)))
             img_output = json.dumps(img)
             if 'No such file' in img_output:
-                msg = 'file copy ' + dest + ' ' + backup_RE + dest
-                msg = msg.replace('//', '/')
-                logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
-                logging.warn('CMD  : ' + msg)
-                self.dev.close()
-                exit()
+                self.copy_to_other_re(active_RE + dest, backup_RE + dest)
+                img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=backup_RE + dest)))
+                img_output = json.dumps(img)
+                if 'No such file' in img_output:
+                    msg = 'file copy ' + dest + ' ' + backup_RE + dest
+                    logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
+                    logging.warn('CMD  : ' + msg)
+                    self.dev.close()
+                    exit()
 
         # If 2 stage upgrade, look for intermediate image
         if self.two_stage:
@@ -227,13 +253,19 @@ class RunUpgrade(object):
                         self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
-                    msg = 'file copy ' + dest_2stg + ' ' + backup_RE + dest_2stg
-                    logging.warn('ERROR: Copy the intermediate image to the backup RE, then re-run script')
-                    logging.warn('CMD  : ' + msg)
-                    self.dev.close()
-                    exit()
-
-        # Check if JSU Install is requested
+                    self.copy_to_other_re(active_RE + dest_2stg, backup_RE + dest_2stg)
+                    # Check again
+                    img = xmltodict.parse(etree.tostring(
+                            self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
+                    img_output = json.dumps(img)
+                    if 'No such file' in img_output:
+                        msg = 'file copy ' + active_RE + dest_2stg + ' ' + backup_RE + dest_2stg
+                        logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
+                        logging.warn('CMD  : ' + msg)
+                        self.dev.close()
+                        exit()
+                    
+        # Check if JSU Install is requested (present in CONFIG.py)
         if CONFIG.CODE_JSU32 or CONFIG.CODE_JSU64:
             # Check for the JSU on the active RE
             logging.warn('Checking for JSU on the active RE...')
@@ -249,12 +281,16 @@ class RunUpgrade(object):
                         self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
-                    msg = 'file copy ' + dest_jsu + ' ' + backup_RE + dest_jsu
-                    msg = msg.replace('//', '/')
-                    logging.warn('ERROR: Copy the JSU to the backup RE, then re-run script')
-                    logging.warn('CMD  : ' + msg)
-                    self.dev.close()
-                    exit()
+                    self.copy_to_other_re(active_RE + dest_jsu, backup_RE + dest_jsu)
+                    img = xmltodict.parse(etree.tostring(
+                            self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
+                    img_output = json.dumps(img)
+                    if 'No such file' in img_output:
+                        msg = 'file copy ' + active_RE + dest_jsu + ' ' + backup_RE + dest_jsu
+                        logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
+                        logging.warn('CMD  : ' + msg)
+                        self.dev.close()
+                        exit()
 
 
     def system_snapshot(self):
@@ -336,12 +372,7 @@ class RunUpgrade(object):
                             logging.warn('Committing changes...')
                             cu.commit()
                     else:
-                        if not self.yes_all:
-                            cont = input('No changes found to commit.  Continue upgrading router? (y/n): ')
-                            if cont.lower() != 'y':
-                                exit()
-                        else:
-                            logging.warn('No changes found to commit...')
+                        logging.warn('No changes found to commit...')
 
             except RuntimeError as e:
                 if "Ex: format='set'" in str(e):
@@ -402,11 +433,7 @@ class RunUpgrade(object):
         else:
             PACKAGE = R_PATH + PKG64
 
-        # Change flags for JSU vs JINSTALL Package:
-        if 'jselective' in PACKAGE:
-            NO_VALIDATE, REBOOT = False, False
-        else:
-            NO_VALIDATE, REBOOT = True, True
+
 
         # Add package and reboot the backup RE
         # Had issues w/utils.sw install, so im using the rpc call instead
@@ -419,8 +446,8 @@ class RunUpgrade(object):
             elif RE1:
                 rsp = self.dev.rpc.request_package_add(package_name=PACKAGE, re1=True)
         else:
-            rsp = self.dev.rpc.request_package_add(reboot=REBOOT,
-                                                   no_validate=NO_VALIDATE,
+            rsp = self.dev.rpc.request_package_add(reboot=True,
+                                                   no_validate=True,
                                                    package_name=PACKAGE,
                                                    re0=RE0, re1=RE1,
                                                    force=self.force)
@@ -600,17 +627,18 @@ class RunUpgrade(object):
                     exit()
             
             # Using dev.cli because I couldn't find an RPC call for switchover
-            self.dev.timeout = 3600
+            self.dev.timeout = 30
             logging.warn("Performing switchover to backup RE...")
-            self.dev.cli('request chassis routing-engine master switch no-confirm')
+            try:
+                self.dev.cli('request chassis routing-engine master switch no-confirm')
+            except:
+                self.dev.close()
             time.sleep(15)
             while self.dev.probe() == False:
                 time.sleep(10)
 
             # Once dev is reachable, re-open connection (refresh facts first to kill conn)
-            self.dev.facts_refresh()
             self.dev.open()
-            self.dev.facts_refresh()
 
 
     def mx_network_services(self):
@@ -713,10 +741,10 @@ class RunUpgrade(object):
                     proto = rep['task-replication-state']['task-protocol-replication-name'][i]
                     if waiting_on != proto:
                         task_sync = False
-                        logging.warn(proto + ': ' + item + '... Waiting...')
+                        logging.warn(proto + ': ' + item + '...')
                     waiting_on = proto
             if task_sync == False:
-                time.sleep(120)
+                time.sleep(60)
 
             # Check which RE is active and switchover if needed
             if self.dev.facts['re_master']['default'] == '1':
