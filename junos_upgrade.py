@@ -127,9 +127,8 @@ class RunUpgrade(object):
             with SCP(self.dev, progress=True) as scp:
                 logging.warn("Copying image to " + dest + "...")
                 scp.put(source, remote_path=dest)
-        except FileNotFoundError as e:
+        except Exception as e:
             logging.warn(str(e))
-            logging.warn('ERROR: Local file "' + source + '" not found')
             self.dev.close()
             exit()
 
@@ -207,6 +206,7 @@ class RunUpgrade(object):
             img_output = json.dumps(img)
             if 'No such file' in img_output:
                 msg = 'file copy ' + dest + ' ' + backup_RE + dest
+                msg = msg.replace('//', '/')
                 logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
                 logging.warn('CMD  : ' + msg)
                 self.dev.close()
@@ -250,6 +250,7 @@ class RunUpgrade(object):
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
                     msg = 'file copy ' + dest_jsu + ' ' + backup_RE + dest_jsu
+                    msg = msg.replace('//', '/')
                     logging.warn('ERROR: Copy the JSU to the backup RE, then re-run script')
                     logging.warn('CMD  : ' + msg)
                     self.dev.close()
