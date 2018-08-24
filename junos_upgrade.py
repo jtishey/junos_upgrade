@@ -147,7 +147,7 @@ class RunUpgrade(object):
              'password': self.auth['password']}
         try:
             net_connect = ConnectHandler(**d)
-            o = net_connect.send_command("file copy " + source + " " + dest)
+            net_connect.send_command("file copy " + source + " " + dest)
             net_connect.disconnect()
         except:
             logging.warn("Error copying file to other RE, Please login and do this manually")
@@ -296,7 +296,7 @@ class RunUpgrade(object):
     def system_snapshot(self):
         """ Performs [request system snapshot] on the device """
         logging.warn('Requesting system snapshot on RE0...')
-        self.dev.timeout = 160
+        self.dev.timeout = 240
         snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
         if 'error' in json.dumps(snap):
             logging.warn("Error taking snapshot... Please check device logs")
@@ -416,10 +416,12 @@ class RunUpgrade(object):
         RE0, RE1 = False, False
         if self.dev.facts['master'] == 'RE0' and \
                     'backup' in self.dev.facts['RE1'].values():
+            active_RE = 'RE0'
             backup_RE = 'RE1'
             RE1 = True
         elif self.dev.facts['master'] == 'RE1' and \
                     'backup' in self.dev.facts['RE0'].values():
+            active_RE = 'RE1'
             backup_RE = 'RE0'
             RE0 = True
         else:
@@ -433,8 +435,6 @@ class RunUpgrade(object):
         else:
             PACKAGE = R_PATH + PKG64
 
-
-
         # Add package and reboot the backup RE
         # Had issues w/utils.sw install, so im using the rpc call instead
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
@@ -446,10 +446,8 @@ class RunUpgrade(object):
             elif RE1:
                 rsp = self.dev.rpc.request_package_add(package_name=PACKAGE, re1=True)
         else:
-            rsp = self.dev.rpc.request_package_add(reboot=True,
-                                                   no_validate=True,
-                                                   package_name=PACKAGE,
-                                                   re0=RE0, re1=RE1,
+            rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True,
+                                                   package_name=PACKAGE, re0=RE0, re1=RE1,
                                                    force=self.force)
 
         # Check to see if the package add succeeded:
@@ -511,6 +509,25 @@ class RunUpgrade(object):
         # Check SW Version:
         logging.warn(backup_RE + ' software version = ' + \
             sw_version['multi-routing-engine-results']['multi-routing-engine-item']['software-information']['junos-version'])
+
+        # Copy the final image back to the RE if needed after installing 
+        if self.arch == '64-bit':
+            final_image = CONFIG.CODE_DEST + '/' + CONFIG.CODE_IMAGE64
+        else:
+            final_image = CONFIG.CODE_DEST + '/' + CONFIG.CODE_IMAGE32
+        
+        img = xmltodict.parse(etree.tostring(
+                self.dev.rpc.file_list(path=backup_RE + ':' + final_image)))
+        img_output = json.dumps(img)
+        if 'No such file' in img_output:
+            self.copy_to_other_re(active_RE +':'+ final_image, backup_RE + ':' + final_image)
+            img = xmltodict.parse(etree.tostring(
+                    self.dev.rpc.file_list(path=backup_RE + ':' + final_image)))
+            img_output = json.dumps(img)
+            if 'No such file' in img_output:
+                msg = 'file copy ' + active_RE + ':' + final_image + ' ' + backup_RE + ':' + final_image
+                logging.warn('ERROR: Copy the image to the backup RE manually')
+                logging.warn('CMD  : ' + msg)
 
 
     def upgrade_single_re(self):
