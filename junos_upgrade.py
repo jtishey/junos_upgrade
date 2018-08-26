@@ -9,14 +9,14 @@ import os, sys, logging, time
 from jnpr.junos import Device
 from jnpr.junos.utils.scp import SCP
 from jnpr.junos.utils.config import Config
-from jnpr.junos.exception import ConnectError
+from jnpr.junos.exception import ConnectError, CommitError
 from netmiko import ConnectHandler
-import argparse
-import xmltodict
-from lxml import etree
 from ltoken import ltoken
-import json
+from lxml import etree
+import xmltodict
+import argparse
 import CONFIG
+import json
 
 
 class RunUpgrade(object):
@@ -368,10 +368,18 @@ class RunUpgrade(object):
                                 cu.rollback(rb_id=0)
                                 exit()
                             else:
-                                cu.commit()
+                                try:
+                                    cu.commit()
+                                except CommitError as e:
+                                    logging.warn("Error committing changes")
+                                    logging.warn(str(e))
                         else:
                             logging.warn('Committing changes...')
-                            cu.commit()
+                            try:
+                                cu.commit()
+                            except CommitError as e:
+                                logging.warn("Error committing changes")
+                                logging.warn(str(e))
                     else:
                         logging.warn('No changes found to commit...')
 
@@ -471,6 +479,7 @@ class RunUpgrade(object):
             else:
                 self.restore_traffic()
             self.dev.close()
+            logging.warn("Script complete, please check the package add errors manually")
             exit()
 
         # Wait 2 minutes for package to install / reboot, then start checking every 30s
@@ -734,10 +743,25 @@ class RunUpgrade(object):
                             cu.rollback(rb_id=0)
                             exit()
                         else:
-                            cu.commit(sync=True, full=True)
+                            try:
+                                if self.dev.facts['2RE']:
+                                    cu.commit(sync=True, full=True)
+                                else:
+                                    cu.commit(full=True)
+                            except CommitError as e:
+                                logging.warn("Error committing changes")
+                                logging.warn(str(e))
+
                     else:
                         logging.warn('Committing Changes...')
-                        cu.commit(sync=True, full=True)
+                        try:
+                            if self.dev.facts['2RE']:
+                                cu.commit(sync=True, full=True)
+                            else:
+                                cu.commit(full=True)
+                        except CommitError as e:
+                            logging.warn("Error committing changes")
+                            logging.warn(str(e))
                 else:
                     logging.warn('No changes found to commit...')
         else:
