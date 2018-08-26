@@ -294,15 +294,19 @@ class RunUpgrade(object):
         """ Performs [request system snapshot] on the device """
         logging.warn('Requesting system snapshot on RE0...')
         self.dev.timeout = 240
-        snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
-        if 'error' in json.dumps(snap):
-            logging.warn("Error taking snapshot... Please check device logs")
-
-        if self.dev.facts['2RE']:
-            logging.warn('Requesting system snapshot on RE1...')
-            snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re1=True)))
+        try:
+            snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
             if 'error' in json.dumps(snap):
                 logging.warn("Error taking snapshot... Please check device logs")
+
+            if self.dev.facts['2RE']:
+                logging.warn('Requesting system snapshot on RE1...')
+                snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re1=True)))
+                if 'error' in json.dumps(snap):
+                    logging.warn("Error taking snapshot... Please check device logs")
+        except Exception as e:
+            logging.warn('ERROR: Problem with snapshots')
+            logging.warn(str(e))
 
 
     def remove_traffic(self):
