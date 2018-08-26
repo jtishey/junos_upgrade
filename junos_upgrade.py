@@ -50,11 +50,12 @@ class RunUpgrade(object):
 
     def initial_setup(self):
         """ Setup logging and check for the image on the server """
-        logging.basicConfig(filename=CONFIG.CODE_LOG, level=logging.WARN,
+        logfile = self.host + '_upgrade.log'
+        logging.basicConfig(filename=logfile, level=logging.WARN,
                             format='%(asctime)s:%(name)s: %(message)s')
         logging.getLogger().name = self.host
         logging.getLogger().addHandler(logging.StreamHandler())
-        logging.info('Information logged in {0}'.format(CONFIG.CODE_LOG))
+        logging.warn('Information logged in {0}'.format(logfile))
 
         # verify package exists on local server
         if not (os.path.isfile(CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64)):
@@ -85,28 +86,24 @@ class RunUpgrade(object):
             logging.warn('-' * 24)
             if self.dev.facts['version_RE0']:
                 logging.warn('            RE0   \t RE1')
-                logging.warn('Mastership: ' + \
-                                 self.dev.facts['RE0']['mastership_state'] + '\t' + \
-                                 self.dev.facts['RE1']['mastership_state'] + '')
-                logging.warn('Status:     ' + \
-                                 self.dev.facts['RE0']['status'] + '\t\t' + \
-                                 self.dev.facts['RE1']['status'] + '')
-                logging.warn('Model:      ' + \
-                                 self.dev.facts['RE0']['model'] + '\t' + \
-                                 self.dev.facts['RE1']['model'] + '')
-                logging.warn('Version:    ' + \
-                                 self.dev.facts['version_RE0'] + '\t' + \
-                                 self.dev.facts['version_RE1'] + '')
+                logging.warn('Mastership: {0} \t {1}'.format(
+                                                self.dev.facts['RE0']['mastership_state'],
+                                                self.dev.facts['RE1']['mastership_state']))
+                logging.warn('Status:     {0} \t\t {1}'.format(
+                                                self.dev.facts['RE0']['status'],
+                                                self.dev.facts['RE1']['status']))
+                logging.warn('Model:      {0} \t {1}'.format(
+                                                self.dev.facts['RE0']['model'],
+                                                self.dev.facts['RE1']['model']))
+                logging.warn('Version:    {0} \t {1}'.format(
+                                                self.dev.facts['version_RE0'],
+                                                self.dev.facts['version_RE1']))
             else:
                 logging.warn('              RE0  ')
-                logging.warn('Mastership: ' + \
-                                 self.dev.facts['RE0']['mastership_state'] + '')
-                logging.warn('Status:     ' + \
-                                 self.dev.facts['RE0']['status'] + '')
-                logging.warn('Model:      ' + \
-                                 self.dev.facts['RE0']['model'] + '')
-                logging.warn('Version:    ' + \
-                                 self.dev.facts['version'] + '')
+                logging.warn('Mastership: {0}'.format(self.dev.facts['RE0']['mastership_state'] + ''))
+                logging.warn('Status:     {0}'.format(self.dev.facts['RE0']['status'] + ''))
+                logging.warn('Model:      {0}'.format(self.dev.facts['RE0']['model'] + ''))
+                logging.warn('Version:    {0}'.format(self.dev.facts['version'] + ''))
             logging.warn("")
     
             # Check for redundant REs
