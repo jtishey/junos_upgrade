@@ -38,9 +38,11 @@ class RunUpgrade(object):
     def get_arguments(self):
         """ Handle input from CLI """
         p = argparse.ArgumentParser(
-            description='Parse and compare before/after baseline files.')
-        p.add_argument('-d', '--device', help='Specify an IP or hostname to upgrade', required=True)
-        p.add_argument('-c', '--config', help='Specify an alternate config file')
+            description='Parse and compare before/after baseline files.',
+            formatter_class=lambda prog: argparse.HelpFormatter(prog,max_help_position=32))
+        p.add_argument('-d', '--device', help='Specify an IP or hostname to upgrade',
+                        required=True, metavar='DEV')
+        p.add_argument('-c', '--config', help='Specify an alternate config file', metavar='CFG')
         p.add_argument('-f', '--force', action='count', default=0, 
                         help='Use "force" option on all package adds (DANGER!)')
         p.add_argument('-n', '--no-install', action='count', default=0,
