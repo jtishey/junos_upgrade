@@ -11,6 +11,7 @@ from jnpr.junos.utils.scp import SCP
 from jnpr.junos.utils.config import Config
 from jnpr.junos.exception import ConnectError, CommitError
 from netmiko import ConnectHandler
+from datetime import datetime
 from ltoken import ltoken
 from lxml import etree
 import xmltodict
@@ -446,6 +447,7 @@ class RunUpgrade(object):
 
         # Add package and reboot the backup RE
         # Had issues w/utils.sw install, so im using the rpc call instead
+        startTime = datetime.now()
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
@@ -458,7 +460,6 @@ class RunUpgrade(object):
             rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True,
                                                    package_name=PACKAGE, re0=RE0, re1=RE1,
                                                    force=self.force)
-
         # Check to see if the package add succeeded:
         logging.warn('-----------------START PKG ADD OUTPUT-----------------')
         ok = True
@@ -499,6 +500,9 @@ class RunUpgrade(object):
         if re_status != 'OK':
             logging.warn('Backup RE state  = ' + re_state)
             logging.warn('Backup RE status = ' + re_status)
+
+        logging.warn("INFO: Package " + PACKAGE + " took {0}".format(
+                        str(datetime.now() - startTime).split('.')[0]))
 
         # Grab core dump and SW version info
         self.dev.facts_refresh()
@@ -574,8 +578,8 @@ class RunUpgrade(object):
             PACKAGE = CONFIG.CODE_DEST + PKG32
         else:
             PACKAGE = CONFIG.CODE_DEST + PKG64
-
         # Had issues w/utils.sw install, so im using the rpc call instead
+        startTime = datetime.now()
         logging.warn('Upgrading device... Please Wait...')
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
@@ -618,7 +622,10 @@ class RunUpgrade(object):
         time.sleep(120)
         while self.dev.probe() == False:
             time.sleep(30)
-
+        
+        logging.warn("INFO: Package " + PACKAGE + " took {0}".format(
+                        str(datetime.now() - startTime).split('.')[0]))
+        
         # Once dev is reachable, re-open connection (refresh facts first to kill conn)
         self.dev.facts_refresh()
         self.dev.open()
