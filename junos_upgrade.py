@@ -16,8 +16,8 @@ from ltoken import ltoken
 from lxml import etree
 import xmltodict
 import argparse
-import CONFIG
 import json
+import yaml
 
 
 class RunUpgrade(object):
@@ -25,8 +25,11 @@ class RunUpgrade(object):
         self.arch = ''
         self.host = ''
         self.auth = ltoken()
+        self.config = {}
+        self.configfile = './config.yml'
         self.force = False
         self.yes_all = False
+        self.no_install = False
         self.set_enhanced_ip = False
         self.pim_nonstop = False
         self.two_stage = False
@@ -37,14 +40,21 @@ class RunUpgrade(object):
         p = argparse.ArgumentParser(
             description='Parse and compare before/after baseline files.')
         p.add_argument('-d', '--device', help='Specify an IP or hostname to upgrade', required=True)
+        p.add_argument('-c', '--config', help='Specify an alternate config file')
         p.add_argument('-f', '--force', action='count', default=0, 
-                        help='Use "force" option on all package adds (DANGER!)', required=False)
+                        help='Use "force" option on all package adds (DANGER!)')
+        p.add_argument('-n', '--no-install', action='count', default=0,
+                        help='Do a dry-run, check for files and copying them only')
         p.add_argument('-y', '--yes_all', action='count', default=0,
-                        help='Answer "y" to all questions during the upgrade (DANGER!)', required=False)
+                        help='Answer "y" to all questions during the upgrade (DANGER!)')
         args = vars(p.parse_args())
         self.host = args['device']
+        if args['config']:
+            self.config = args['config']
         if args['force']:
             self.force - True
+        if args['no-install']:
+            self.no_install = True
         if args['yes_all']:
             self.yes_all = True
 
@@ -58,12 +68,21 @@ class RunUpgrade(object):
         logging.getLogger().addHandler(logging.StreamHandler())
         logging.warn('Information logged in {0}'.format(logfile))
 
+
+        """ Open the self.config['yml file and load code versions and options """
+        try:
+            with open(self.configfile) as f:
+                self.config = yaml.load(f)
+        except:
+            logging.warn("ERROR: Issues opening config file {0}".format(self.configfile))
+            exit(1)
+
         # verify package exists on local server
-        if not (os.path.isfile(CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64)):
+        if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])):
             msg = 'Software package does not exist: {0}. '.format(
-                                CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64)
+                                self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])
             logging.error(msg)
-            sys.exit()
+            self.end_script()
 
 
     def open_connection(self):
@@ -113,8 +132,7 @@ class RunUpgrade(object):
                 if not self.yes_all:
                     re_stop = input("Redundant RE's not found, Continue? (y/n): ")
                     if re_stop.lower() != 'y':
-                        self.dev.close()
-                        exit()
+                        self.end_script()
                 else:
                     logging.warn("Redundant RE's not found...")
 
@@ -128,8 +146,7 @@ class RunUpgrade(object):
                 scp.put(source, remote_path=dest)
         except Exception as e:
             logging.warn(str(e))
-            self.dev.close()
-            exit()
+            self.end_script()
 
 
     def copy_to_other_re(self, source, dest):
@@ -178,34 +195,34 @@ class RunUpgrade(object):
                 logging.warn("Using 32-bit Image...")
 
         # Are we doing a two-stage upgrade? (Reqd for >3 major version change)
-        if CONFIG.CODE_2STAGE32 or CONFIG.CODE_2STAGE64:
-            if self.dev.facts['version'][:2] == CONFIG.CODE_2STAGEFOR:
+        if self.config['CODE_2STAGE32'] or self.config['CODE_2STAGE64']:
+            if self.dev.facts['version'][:2] == self.config['CODE_2STAGEFOR']:
                 logging.warn('Two-Stage Upgrade will be performed...')
                 self.two_stage = True
         
         # Define all the file names / paths
         if self.arch == '32-bit':
-            source = CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE32
-            source_2stg = CONFIG.CODE_FOLDER + CONFIG.CODE_2STAGE32
-            source_jsu = CONFIG.CODE_FOLDER + CONFIG.CODE_JSU32
+            source = self.config['CODE_FOLDER'] + self.config['CODE_IMAGE32']
+            source_2stg = self.config['CODE_FOLDER'] + self.config['CODE_2STAGE32']
+            source_jsu = self.config['CODE_FOLDER'] + self.config['CODE_JSU32']
             if self.two_stage:
-                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_2STAGE32
-                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE32
-                dest_jsu = CONFIG.CODE_PRESERVE + CONFIG.CODE_JSU32
+                dest = self.config['CODE_PRESERVE'] + self.config['CODE_2STAGE32']
+                dest_2stg = self.config['CODE_DEST'] + self.config['CODE_IMAGE32']
+                dest_jsu = self.config['CODE_PRESERVE'] + self.config['CODE_JSU32']
             else:
-                dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE32
-                dest_jsu = CONFIG.CODE_DEST + CONFIG.CODE_JSU32            
+                dest = self.config['CODE_DEST'] + self.config['CODE_IMAGE32']
+                dest_jsu = self.config['CODE_DEST'] + self.config['CODE_JSU32']            
         elif self.arch == '64-bit':
-            source = CONFIG.CODE_FOLDER + CONFIG.CODE_IMAGE64
-            source_2stg = CONFIG.CODE_FOLDER + CONFIG.CODE_2STAGE64
-            source_jsu = CONFIG.CODE_FOLDER + CONFIG.CODE_JSU64
+            source = self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64s']
+            source_2stg = self.config['CODE_FOLDER'] + self.config['CODE_2STAGE64']
+            source_jsu = self.config['CODE_FOLDER'] + self.config['CODE_JSU64']
             if self.two_stage:
-                dest = CONFIG.CODE_PRESERVE + CONFIG.CODE_2STAGE64
-                dest_2stg = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE64
-                dest_jsu = CONFIG.CODE_PRESERVE + CONFIG.CODE_JSU64
+                dest = self.config['CODE_PRESERVE'] + self.config['CODE_2STAGE64']
+                dest_2stg = self.config['CODE_DEST'] + self.config['CODE_IMAGE64s']
+                dest_jsu = self.config['CODE_PRESERVE'] + self.config['CODE_JSU64']
             else:
-                dest = CONFIG.CODE_DEST + CONFIG.CODE_IMAGE64
-                dest_jsu = CONFIG.CODE_DEST + CONFIG.CODE_JSU64     
+                dest = self.config['CODE_DEST'] + self.config['CODE_IMAGE64s']
+                dest_jsu = self.config['CODE_DEST'] + self.config['CODE_JSU64']     
 
         # Check for final software image on the device
         logging.warn('Checking for image on the active RE...')
@@ -233,8 +250,7 @@ class RunUpgrade(object):
                     msg = 'file copy ' + dest + ' ' + backup_RE + dest
                     logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
                     logging.warn('CMD  : ' + msg)
-                    self.dev.close()
-                    exit()
+                    self.end_script()
 
         # If 2 stage upgrade, look for intermediate image
         if self.two_stage:
@@ -260,11 +276,10 @@ class RunUpgrade(object):
                         msg = 'file copy ' + active_RE + dest_2stg + ' ' + backup_RE + dest_2stg
                         logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
                         logging.warn('CMD  : ' + msg)
-                        self.dev.close()
-                        exit()
+                        self.end_script()
                     
-        # Check if JSU Install is requested (present in CONFIG.py)
-        if CONFIG.CODE_JSU32 or CONFIG.CODE_JSU64:
+        # Check if JSU Install is requested (present in self.config['py)
+        if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
             # Check for the JSU on the active RE
             logging.warn('Checking for JSU on the active RE...')
             img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_jsu)))                
@@ -287,8 +302,7 @@ class RunUpgrade(object):
                         msg = 'file copy ' + active_RE + dest_jsu + ' ' + backup_RE + dest_jsu
                         logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
                         logging.warn('CMD  : ' + msg)
-                        self.dev.close()
-                        exit()
+                        self.end_script()
 
 
     def system_snapshot(self):
@@ -311,8 +325,8 @@ class RunUpgrade(object):
 
 
     def remove_traffic(self):
-        """ Execute the PRE_UPGRADE_CMDS from the CONFIG.py file to remove traffic """
-        config_cmds = CONFIG.PRE_UPGRADE_CMDS
+        """ Execute the PRE_UPGRADE_CMDS from the self.config['py file to remove traffic """
+        config_cmds = self.config['PRE_UPGRADE_CMDS']
         
         # Network Service check on MX Platform
         if self.dev.facts['model'][:2] == 'MX':
@@ -367,7 +381,7 @@ class RunUpgrade(object):
                             if cont.lower() != 'y':
                                 logging.warn('Rolling back changes...')
                                 cu.rollback(rb_id=0)
-                                exit()
+                                self.end_script()
                             else:
                                 try:
                                     cu.commit()
@@ -390,8 +404,7 @@ class RunUpgrade(object):
                     logging.warn('       Make sure they are formatted correctly.')
                 else:
                     logging.warn('ERROR: {0}'.format(e))
-                self.dev.close()
-                exit()
+                self.end_script()
         else:
             logging.warn("No pre-upgrade commands in CONFIG file")
 
@@ -404,19 +417,18 @@ class RunUpgrade(object):
                 res = input('Restore config changes before exiting? (y/n): ')
                 if res.lower() == 'y':
                     self.restore_traffic()
-                self.dev.close()
-                exit()
+                self.end_script()
         # First Stage Upgrade
         if self.two_stage:
-            self.backup_re_pkg_add(CONFIG.CODE_2STAGE32, CONFIG.CODE_2STAGE64, CONFIG.CODE_PRESERVE)
+            self.backup_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
         # Second Stage Upgrade
-        self.backup_re_pkg_add(CONFIG.CODE_IMAGE32, CONFIG.CODE_IMAGE64, CONFIG.CODE_DEST)
+        self.backup_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64s'], self.config['CODE_DEST'])
         # JSU Upgrade
-        if CONFIG.CODE_JSU32 or CONFIG.CODE_JSU64:
+        if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
             if self.two_stage:
-                self.backup_re_pkg_add(CONFIG.CODE_JSU32, CONFIG.CODE_JSU64, CONFIG.CODE_PRESERVE)
+                self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_PRESERVE'])
             else:
-                self.backup_re_pkg_add(CONFIG.CODE_JSU32, CONFIG.CODE_JSU64, CONFIG.CODE_DEST)
+                self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_DEST'])
 
    
     def backup_re_pkg_add(self, PKG32, PKG64, R_PATH):
@@ -436,8 +448,7 @@ class RunUpgrade(object):
             RE0 = True
         else:
             logging.warn("Trouble finding the backup RE...")
-            self.dev.close()
-            exit()
+            self.end_script()
 
         # Assign package path and name
         if self.arch == '32-bit':
@@ -479,9 +490,8 @@ class RunUpgrade(object):
                     self.restore_traffic()
             else:
                 self.restore_traffic()
-            self.dev.close()
             logging.warn("Script complete, please check the package add errors manually")
-            exit()
+            self.end_script()
 
         # Wait 2 minutes for package to install / reboot, then start checking every 30s
         time.sleep(120)
@@ -518,17 +528,16 @@ class RunUpgrade(object):
                 if not self.yes_all:
                     cont = input("Continue with upgrade? (y/n): ")
                     if cont.lower() != 'y':
-                        self.dev.close()
-                        exit()
+                        self.end_script()
         # Check SW Version:
         logging.warn(backup_RE + ' software version = ' + \
             sw_version['multi-routing-engine-results']['multi-routing-engine-item']['software-information']['junos-version'])
 
         # Copy the final image back to the RE if needed after installing 
         if self.arch == '64-bit':
-            final_image = CONFIG.CODE_DEST + '/' + CONFIG.CODE_IMAGE64
+            final_image = self.config['CODE_DEST'] + '/' + self.config['CODE_IMAGE64s']
         else:
-            final_image = CONFIG.CODE_DEST + '/' + CONFIG.CODE_IMAGE32
+            final_image = self.config['CODE_DEST'] + '/' + self.config['CODE_IMAGE32']
         
         img = xmltodict.parse(etree.tostring(
                 self.dev.rpc.file_list(path=backup_RE + ':' + final_image)))
@@ -555,29 +564,28 @@ class RunUpgrade(object):
                 res = input('Restore config changes before exiting? (y/n): ')
                 if res.lower() == 'y':
                     self.restore_traffic()
-                self.dev.close()
-                exit()
+                self.end_script()
 
         # First Stage Upgrade
         if self.two_stage:
-            self.single_re_pkg_add(CONFIG.CODE_2STAGE32, CONFIG.CODE_2STAGE64, CONFIG.CODE_PRESERVE)
+            self.single_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
         # Second Stage Upgrade
-        self.single_re_pkg_add(CONFIG.CODE_IMAGE32, CONFIG.CODE_IMAGE64, CONFIG.CODE_DEST)
+        self.single_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64s'], self.config['CODE_DEST'])
         # JSU Upgrade
-        if CONFIG.CODE_JSU32 or CONFIG.CODE_JSU64:
+        if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
             if self.two_stage:
-                self.single_re_pkg_add(CONFIG.CODE_JSU32, CONFIG.CODE_JSU64, CONFIG.CODE_PRESERVE)
+                self.single_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_PRESERVE'])
             else:
-                self.single_re_pkg_add(CONFIG.CODE_JSU32, CONFIG.CODE_JSU64, CONFIG.CODE_DEST)
+                self.single_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_DEST'])
 
 
     def single_re_pkg_add(self, PKG32, PKG64, R_PATH):
         """ Perform software add and reboot the RE / Device """
         self.dev.timeout = 3600
         if self.arch == '32-bit':
-            PACKAGE = CONFIG.CODE_DEST + PKG32
+            PACKAGE = self.config['CODE_DEST'] + PKG32
         else:
-            PACKAGE = CONFIG.CODE_DEST + PKG64
+            PACKAGE = self.config['CODE_DEST'] + PKG64
         # Had issues w/utils.sw install, so im using the rpc call instead
         startTime = datetime.now()
         logging.warn('Upgrading device... Please Wait...')
@@ -609,13 +617,11 @@ class RunUpgrade(object):
                 cont = input("Restore configuration before exiting? (y/n): ")
                 if cont.lower() == 'y':
                     self.restore_traffic()
-                self.dev.close()
-                exit()
+                self.end_script()
             else:
                 logging.warn('Restoring configuration before exiting...')
                 self.restore_traffic()
-                self.dev.close()
-                exit()
+                self.end_script()
 
         logging.warn("Rebooting Device, this may take a while...")
         # Wait 2 minutes for package to install and reboot, then start checking every 30s
@@ -641,8 +647,7 @@ class RunUpgrade(object):
                 if not self.yes_all:
                     cont = input("Continue with upgrade? (y/n): ")
                     if cont.lower() != 'y':
-                        self.dev.close()
-                        exit()
+                        self.end_script()
         # Check SW Version:
         logging.warn('SW Version: ' + self.dev.facts['version'] + '')
 
@@ -656,9 +661,7 @@ class RunUpgrade(object):
             if not self.yes_all:
                 cont = input('Continue with switchover? (y/n): ')
                 if cont.lower() != 'y':
-                    logging.warn("Exiting...")
-                    self.dev.close()
-                    exit()
+                    self.end_script()
             
             # Using dev.cli because I couldn't find an RPC call for switchover
             self.dev.timeout = 30
@@ -725,11 +728,10 @@ class RunUpgrade(object):
             else:
                 logging.warn('ERROR: Versions do not match on both routing engines')
                 logging.warn('Exiting script, please check device status manually.')
-                self.dev.close()
-                exit()
+                self.end_script()
 
         logging.warn('Restoring configruation...')
-        config_cmds = CONFIG.POST_UPGRADE_CMDS
+        config_cmds = self.config['POST_UPGRADE_CMDS']
 
         # If pim nonstop-routing was deactivated, re-activate it
         if self.pim_nonstop:
@@ -748,7 +750,7 @@ class RunUpgrade(object):
                         if cont.lower() != 'y':
                             logging.warn('Rolling back changes...')
                             cu.rollback(rb_id=0)
-                            exit()
+                            self.end_script()
                         else:
                             try:
                                 if self.dev.facts['2RE']:
@@ -821,6 +823,16 @@ class RunUpgrade(object):
                     self.dev.facts_refresh()
 
 
+    def end_script(self):
+        """ Close the connection to the device and exit the script """
+        try:
+            logging.warn("Disconnecting from {0}...".format(self.host))
+            self.dev.close()
+        except:
+            logging.warn("Did not disconnect cleanly.")
+        exit()
+
+
 execute = RunUpgrade()
 
 # 1. Get CLI Input / Print Usage Info
@@ -833,6 +845,12 @@ execute.open_connection()
 execute.collect_re_info()
 # 5. Check For SW Image(s) on Device - Copy if needed
 execute.image_check()
+
+# Quit here if the --no-install option is present
+if execute.no_install:
+    logging.warn("Done copying files - run again without -n/--no-upgrade to perform the upgrade")
+    execute.end_script()
+
 # 6. Request system snapshot
 execute.system_snapshot()
 # 7. Remove Redundancy / NSR, Pre-Upgrade config changes
@@ -860,5 +878,4 @@ execute.switch_to_master()
 #14. Request system snapshot
 execute.system_snapshot()
 
-execute.dev.close()
-logging.warn("Upgrade script complete, have a nice day!")
+execute.end_script()
