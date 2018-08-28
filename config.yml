@@ -1,6 +1,5 @@
 # SETTINGS VALUES:
 # CODE_FOLDER    = SERVER DIRECTORY WHERE IMAGES ARE STORED
-# CODE_LOG       = PATH AND FILENAME TO SAVE LOGS
 # CODE_DEST      = PATH ON THE DEVICE TO SAVE IMAGES
 # CODE_IMAGE64   = 64-BIT IMAGE NAME TO BE INSTALLED
 # CODE_IMAGE32   = 32-BIT IMAGE NAME TO BE INSTALLED
@@ -18,7 +17,6 @@
 #  (Nonstop routing in protocols config will also be handled automatically)
 
 CODE_FOLDER: '/opt/code/Juniper/Approved/MX/MX960/'
-CODE_LOG: './junos_upgrade.log'
 CODE_DEST: '/var/tmp/'
 CODE_IMAGE64: 'junos-install-mx-x86-64-16.1R6-S1.1.tgz'
 CODE_IMAGE32: 'junos-install-mx-x86-32-16.1R6-S1.1.tgz'
