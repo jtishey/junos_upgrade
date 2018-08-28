@@ -658,17 +658,22 @@ class RunUpgrade(object):
     def switchover_RE(self):
         """ Issue RE switchover """
         if self.dev.facts['2RE']:
-            logging.warn("-----------------------------------------------------------")
-            logging.warn("|  Switch to backup RE, THIS WILL BE SERVICE IMPACTING!!! |")
-            logging.warn("-----------------------------------------------------------")
+            # Add a check for GRES / NSR
+            x = self.dev.rpc.get_nonstop_routing_information()
+            for item in x.getparent().iter():
+                if item.findtext('nonstop-routing-enabled'):
+                    nsr = item.findtext('nonstop-routing-enabled')
+            if nsr != 'Enabled':
+                logging.warn("-------------------WARNING---------------------------------")
+                logging.warn('Nonstop-Routing is {0}, switchover will be impacting!'.format(nsr))
+                logging.warn("-----------------------------------------------------------")
             if not self.yes_all:
                 cont = input('Continue with switchover? (y/n): ')
                 if cont.lower() != 'y':
                     self.end_script()
-            
             # Using dev.cli because I couldn't find an RPC call for switchover
-            self.dev.timeout = 30
-            logging.warn("Performing switchover to backup RE...")
+            self.dev.timeout = 20
+            logging.warn("Performing routing-engine switchover...")
             try:
                 self.dev.cli('request chassis routing-engine master switch no-confirm')
             except:
@@ -676,7 +681,6 @@ class RunUpgrade(object):
             time.sleep(15)
             while self.dev.probe() == False:
                 time.sleep(10)
-
             # Once dev is reachable, re-open connection (refresh facts first to kill conn)
             self.dev.open()
 
@@ -803,25 +807,11 @@ class RunUpgrade(object):
                 if not self.yes_all:
                     cont = input('Task replication complete, switchover to RE0? (y/n): ')
                     if cont.lower() == 'y':
-                        self.dev.timeout = 20
                         logging.warn("Performing final switchover to RE0...")
-                        self.dev.cli('request chassis routing-engine master switch no-confirm')
-                        time.sleep(15)
-                        while self.dev.probe() == False:
-                            time.sleep(10)
-                        self.dev.facts_refresh()
-                        self.dev.open()
-                        self.dev.facts_refresh()
+                        self.switchover_RE()
                 else:
-                    self.dev.timeout = 20
                     logging.warn("Performing final switchover to RE0...")
-                    self.dev.cli('request chassis routing-engine master switch no-confirm')
-                    time.sleep(15)
-                    while self.dev.probe() == False:
-                        time.sleep(10)
-                    self.dev.facts_refresh()
-                    self.dev.open()
-                    self.dev.facts_refresh()
+                    self.switchover_RE()
 
 
     def end_script(self):
