@@ -667,9 +667,27 @@ class RunUpgrade(object):
             self.dev.timeout = 20
             logging.warn("Performing routing-engine switchover...")
             try:
-                self.dev.cli('request chassis routing-engine master switch no-confirm')
+                r = self.dev.cli('request chassis routing-engine master switch no-confirm')
             except:
+                time.sleep(10)
+            
+            if 'not ready' in str(r).lower():
+                logging.warn(str(r))
+                logging.warn("Waiting 2 minutes to stabilize...")
+                time.wait(120)
+                try:
+                    r = self.dev.cli('request chassis routing-engine master switch no-confirm')
+                except:
+                    time.sleep(5)    
+                if 'Not ready' in str(r):
+                    logging.warn(str(r))
+                    cont = self.input_parse('Please switchover manually and enter "y" to continue: ')
+                    if cont == 'n':
+                        self.end_script
+            try:
                 self.dev.close()
+            except:
+                pass
             time.sleep(15)
             while self.dev.probe() == False:
                 time.sleep(10)
