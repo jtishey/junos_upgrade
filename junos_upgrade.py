@@ -414,13 +414,6 @@ class RunUpgrade(object):
 
     def upgrade_backup_re(self):
         """ Cycle through installing packcages for Dual RE systems """
-        if not self.yes_all:
-            cont = input("Continue with software add / reboot on backup RE? (y/n): ")
-            if cont.lower() != 'y':
-                res = input('Restore config changes before exiting? (y/n): ')
-                if res.lower() == 'y':
-                    self.restore_traffic()
-                self.end_script()
         # First Stage Upgrade
         if self.two_stage:
             self.backup_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
