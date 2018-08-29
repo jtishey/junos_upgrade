@@ -352,8 +352,8 @@ class RunUpgrade(object):
                 else:
                     logging.warn('Network Services mode is ' + cur_mode + '')
                     if not self.yes_all:
-                        cont = input('Change Network Services Mode to Enhanced-IP? (y/n): ')
-                        if cont.lower() == 'y':
+                        cont = self.input_parse('Change Network Services Mode to Enhanced-IP? (y/n): ')
+                        if cont == 'y':
                             # Set a flag to recheck at the end and reboot if needed:
                             self.set_enhanced_ip = True
                     else:
@@ -370,7 +370,7 @@ class RunUpgrade(object):
         if config_cmds:
             logging.warn('Entering Configuration Mode...')
             logging.warn('-' * 24)
-
+            success = True
             try:
                 with Config(self.dev, mode='exclusive') as cu:
                     for cmd in config_cmds:
@@ -380,17 +380,17 @@ class RunUpgrade(object):
                     cu.pdiff()
                     if cu.diff():
                         if not self.yes_all:
-                            cont = input('Commit Changes? (y/n): ')
-                            if cont.lower() != 'y':
-                                logging.warn('Rolling back changes...')
-                                cu.rollback(rb_id=0)
-                                self.end_script()
-                            else:
+                            cont = self.input_parse('Commit Changes? (y/n): ')
+                            if cont =='y':
                                 try:
                                     cu.commit()
                                 except CommitError as e:
                                     logging.warn("Error committing changes")
                                     logging.warn(str(e))
+                            else:
+                                logging.warn('Rolling back changes...')
+                                cu.rollback(rb_id=0)
+                                success = False
                         else:
                             logging.warn('Committing changes...')
                             try:
@@ -400,13 +400,14 @@ class RunUpgrade(object):
                                 logging.warn(str(e))
                     else:
                         logging.warn('No changes found to commit...')
-
             except RuntimeError as e:
                 if "Ex: format='set'" in str(e):
                     logging.warn('ERROR: Unable to parse the PRE_UPGRADE_CMDS')
                     logging.warn('       Make sure they are formatted correctly.')
                 else:
                     logging.warn('ERROR: {0}'.format(e))
+                success = False
+            if not success:
                 self.end_script()
         else:
             logging.warn("No pre-upgrade commands in CONFIG file")
@@ -481,8 +482,8 @@ class RunUpgrade(object):
             self.dev.timeout = 60
             logging.warn('Encountered issues with software add...  Exiting')
             if not self.yes_all:
-                cont = input('Rollback configuration changes? (y/n): ')
-                if cont.lower() == 'y':
+                cont = self.input_parse('Rollback configuration changes? (y/n): ')
+                if cont == 'y':
                     self.restore_traffic()
             else:
                 self.restore_traffic()
@@ -507,7 +508,7 @@ class RunUpgrade(object):
             logging.warn('Backup RE state  = ' + re_state)
             logging.warn('Backup RE status = ' + re_status)
 
-        logging.warn("INFO: Package " + PACKAGE + " took {0}".format(
+        logging.warn("Package " + PACKAGE + " took {0}".format(
                         str(datetime.now() - startTime).split('.')[0]))
 
         # Grab core dump and SW version info
@@ -517,14 +518,14 @@ class RunUpgrade(object):
         
         # Check for core dumps:
         logging.warn("Checking for core dumps...")
-        for item in core_dump['multi-routing-engine-results']['multi-routing-engine-item']['directory-list']['output']:
-            if 'No such file' not in item:
-                logging.warn('Found Core Dumps!  Please investigate.')
-                logging.warn(item)
-                if not self.yes_all:
-                    cont = input("Continue with upgrade? (y/n): ")
-                    if cont.lower() != 'y':
-                        self.end_script()
+        if 'directory' in core_dump['multi-routing-engine-results']['multi-routing-engine-item']['directory-list'].keys():
+            logging.warn('Found Core Dumps!  Please investigate.')
+            cont = self.input_parse("Continue with upgrade? (y/n): ")
+            if cont == 'n':
+                cont = self.input_parse("Revert config changes? (y/n): ")
+                if cont == 'y':
+                    self.restore_traffic()
+                self.end_script()
         # Check SW Version:
         logging.warn(backup_RE + ' software version = ' + \
             sw_version['multi-routing-engine-results']['multi-routing-engine-item']['software-information']['junos-version'])
@@ -551,15 +552,13 @@ class RunUpgrade(object):
 
     def upgrade_single_re(self):
         """ Cycle through installing packcages for single RE systems """
-        logging.warn("-----------------------------------------------------------")
-        logging.warn("|  Ready to upgrade, THIS WILL BE SERVICE IMPACTING!!!    |")
+        logging.warn("------------------------WARNING-----------------------------")
+        logging.warn("Ready to upgrade, THIS WILL BE SERVICE IMPACTING!!!        ")
         logging.warn("-----------------------------------------------------------")
         if not self.yes_all:
-            cont = input("Continue with software add / reboot? (y/n): ")
-            if cont.lower() != 'y':
-                res = input('Restore config changes before exiting? (y/n): ')
-                if res.lower() == 'y':
-                    self.restore_traffic()
+            cont = self.input_parse("Continue with software add / reboot? (y/n): ")
+            if cont != 'y':
+                self.restore_traffic()
                 self.end_script()
 
         # First Stage Upgrade
@@ -610,8 +609,8 @@ class RunUpgrade(object):
         if not ok:
             logging.warn('Encountered issues with software add...  Exiting')
             if not self.yes_all:
-                cont = input("Restore configuration before exiting? (y/n): ")
-                if cont.lower() == 'y':
+                cont = self.input_parse("Restore configuration before exiting? (y/n): ")
+                if cont == 'y':
                     self.restore_traffic()
                 self.end_script()
             else:
@@ -625,7 +624,7 @@ class RunUpgrade(object):
         while self.dev.probe() == False:
             time.sleep(30)
         
-        logging.warn("INFO: Package " + PACKAGE + " took {0}".format(
+        logging.warn("Package " + PACKAGE + " took {0}".format(
                         str(datetime.now() - startTime).split('.')[0]))
         
         # Once dev is reachable, re-open connection (refresh facts first to kill conn)
@@ -641,7 +640,7 @@ class RunUpgrade(object):
                 logging.warn('Found Core Dumps!  Please investigate.')
                 logging.warn(item)
                 if not self.yes_all:
-                    cont = input("Continue with upgrade? (y/n): ")
+                    cont = self.input_parse("Continue with upgrade? (y/n): ")
                     if cont.lower() != 'y':
                         self.end_script()
         # Check SW Version:
@@ -657,12 +656,12 @@ class RunUpgrade(object):
                 if item.findtext('nonstop-routing-enabled'):
                     nsr = item.findtext('nonstop-routing-enabled')
             if nsr != 'Enabled':
-                logging.warn("-------------------WARNING---------------------------------")
+                logging.warn("----------------------WARNING----------------------------")
                 logging.warn('Nonstop-Routing is {0}, switchover will be impacting!'.format(nsr))
-                logging.warn("-----------------------------------------------------------")
+                logging.warn("---------------------------------------------------------")
             if not self.yes_all:
-                cont = input('Continue with switchover? (y/n): ')
-                if cont.lower() != 'y':
+                cont = self.input_parse('Continue with switchover? (y/n): ')
+                if cont != 'y':
                     self.end_script()
             # Using dev.cli because I couldn't find an RPC call for switchover
             self.dev.timeout = 20
@@ -694,16 +693,15 @@ class RunUpgrade(object):
                     logging.warn('Error commtitting "set chassis network-services enhanced-ip"')
                     logging.warn('Device will not be rebooted, please check error configuring enhanced-ip')
                 
-                logging.warn("-----------------------------------------------------------")
-                logging.warn("| SERVICE IMPACTING REBOOT WARNING                        |")
+                logging.warn("-----------------------WARNING------------------------------")
+                logging.warn("SERVICE IMPACTING REBOOT WARNING")
                 logging.warn("-----------------------------------------------------------")
 
-                cont = 'n'
                 if not self.yes_all:
-                    cont = input('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
+                    cont = self.input_parse('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
                 else:
                     cont = 'y'
-                if cont.lower() != 'y':
+                if cont != 'y':
                     logging.warn("Skipping reboot of both RE's for network-services mode...")
                 else:
                     logging.warn('Rebooting ' + self.host + '... Please wait...')
@@ -716,6 +714,14 @@ class RunUpgrade(object):
                     self.dev.facts_refresh()
                     self.dev.open()
                     self.dev.facts_refresh()
+
+
+    def input_parse(self, msg):
+        """ Prompt for input """
+        q = ''
+        while q.lower() != 'y' and q.lower() != 'n':
+            q = input(msg)
+        return q.lower()
 
 
     def restore_traffic(self):
@@ -738,6 +744,7 @@ class RunUpgrade(object):
             config_cmds.append('activate protocols pim nonstop-routing')
 
         if config_cmds:
+            success = True
             with Config(self.dev, mode='exclusive') as cu:
                 for cmd in config_cmds:
                     cu.load(cmd, merge=True, ignore_warning=True)
@@ -746,11 +753,11 @@ class RunUpgrade(object):
                 cu.pdiff()
                 if cu.diff():
                     if not self.yes_all:
-                        cont = input('Commit Changes? (y/n): ')
-                        if cont.lower() != 'y':
+                        cont = self.input_parse('Commit Changes? (y/n): ')
+                        if cont != 'y':
                             logging.warn('Rolling back changes...')
                             cu.rollback(rb_id=0)
-                            self.end_script()
+                            success = False
                         else:
                             try:
                                 if self.dev.facts['2RE']:
@@ -760,7 +767,6 @@ class RunUpgrade(object):
                             except CommitError as e:
                                 logging.warn("Error committing changes")
                                 logging.warn(str(e))
-
                     else:
                         logging.warn('Committing Changes...')
                         try:
@@ -771,40 +777,35 @@ class RunUpgrade(object):
                         except CommitError as e:
                             logging.warn("Error committing changes")
                             logging.warn(str(e))
+            if not success:
+                self.end_script()
         else:
             logging.warn("No post-upgrade commands in CONFIG file")
 
 
     def switch_to_master(self):
         """ Switch back to the default master - RE0 """
-        # Add a check for task replication
-        logging.warn('Checking task replication...')
-        task_sync = False
-        waiting_on = ''
-        while task_sync == False:
-            rep = xmltodict.parse(etree.tostring(
-                    self.dev.rpc.get_routing_task_replication_state()))
-            task_sync = True
-            for i, item in enumerate(rep['task-replication-state']['task-protocol-replication-state']):
-                if item != 'Complete':
-                    proto = rep['task-replication-state']['task-protocol-replication-name'][i]
-                    if waiting_on != proto:
+        if self.dev.facts['2RE']:
+            # Add a check for task replication
+            logging.warn('Checking task replication...')
+            task_sync = False
+            waiting_on = ''
+            while task_sync == False:
+                rep = xmltodict.parse(etree.tostring(
+                        self.dev.rpc.get_routing_task_replication_state()))
+                task_sync = True
+                for i, item in enumerate(rep['task-replication-state']['task-protocol-replication-state']):
+                    if item != 'Complete':
                         task_sync = False
-                        logging.warn(proto + ': ' + item + '...')
-                    waiting_on = proto
-            if task_sync == False:
-                time.sleep(60)
-
+                        proto = rep['task-replication-state']['task-protocol-replication-name'][i]
+                        if waiting_on != proto:
+                            waiting_on = proto
+                            logging.warn(proto + ': ' + item + '...')
+                if task_sync == False:
+                    time.sleep(60)
             # Check which RE is active and switchover if needed
-            if self.dev.facts['re_master']['default'] == '1':
-                if not self.yes_all:
-                    cont = input('Task replication complete, switchover to RE0? (y/n): ')
-                    if cont.lower() == 'y':
-                        logging.warn("Performing final switchover to RE0...")
-                        self.switchover_RE()
-                else:
-                    logging.warn("Performing final switchover to RE0...")
-                    self.switchover_RE()
+            if self.dev.facts['RE0']['mastership_state'] != 'master':
+                self.switchover_RE()
 
 
     def end_script(self):
@@ -857,9 +858,14 @@ else:
 execute.mx_network_services()
 # 12. Restore Routing-Engine redundancy
 execute.restore_traffic()
-#13. Switch back to RE0
+# 13. Switch back to RE0
 execute.switch_to_master()
-#14. Request system snapshot
+# 14. Request system snapshot
 execute.system_snapshot()
+# 15. Display results
+logging.warn("------------------------")
+logging.warn("|       RESULTS        |")
+logging.warn("------------------------")
+execute.collect_re_info()
 
 execute.end_script()
