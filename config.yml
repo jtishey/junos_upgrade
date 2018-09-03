@@ -16,7 +16,6 @@ CODE_PRESERVE: '/var/preserve/'
 CODE_2STAGE_NAME: '13.3R6-S1.6'
 CODE_2STAGE64: 'jinstall64-13.3R6-S1.6-domestic-signed.tgz'
 CODE_2STAGE32: 'jinstall-13.3R6-S1.6-domestic-signed.tgz'
-CODE_2STAGEFOR: '12'
 
 # JSU NAMES IF REQUIRED
 CODE_JSU_NAME: '16.1R6-S1-J2'

@@ -199,10 +199,9 @@ class RunUpgrade(object):
 
         # Are we doing a two-stage upgrade? (Reqd for >3 major version change)
         if self.config['CODE_2STAGE32'] or self.config['CODE_2STAGE64']:
-            if self.dev.facts['version'][:2] == self.config['CODE_2STAGEFOR']:
+            if (int(self.config['CODE_NAME'][:2]) - int(self.dev.facts['version'][:2])) > 3:
                 logging.warn('Two-Stage Upgrade will be performed...')
                 self.two_stage = True
-        
         # Define all the file names / paths
         if self.arch == '32-bit':
             source = self.config['CODE_FOLDER'] + self.config['CODE_IMAGE32']
