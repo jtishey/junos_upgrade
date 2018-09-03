@@ -153,11 +153,7 @@ class RunUpgrade(object):
 
 
     def copy_to_other_re(self, source, dest):
-        """
-        Use netmiko to copy files from one RE to the other because PyEZ doesnt allow this
-            :param source: source file, including re:/ prefix
-            :param dest:  destination location, including re:/ prefix
-        """
+        """Use netmiko to copy files from one RE to the other because PyEZ doesnt allow this"""
         logging.warn("Image not found on backup RE, copying now...")
         d = {'device_type': 'juniper',
              'ip': self.host,
