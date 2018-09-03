@@ -410,20 +410,41 @@ class RunUpgrade(object):
 
     def upgrade_backup_re(self):
         """ Cycle through installing packcages for Dual RE systems """
+        if self.dev.facts['master'] == 'RE0':
+            backup_RE = 'RE1'
+        else:
+            backup_RE = 'RE0'
+
         # First Stage Upgrade
         if self.two_stage:
-            self.backup_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
+            # Only upgrade if the current version is not the 2stage, or final version:
+            if self.dev.facts['version_' + backup_RE] != self.config['CODE_2STAGE_NAME'] and \
+                        self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
+                # Perform the upgrade
+                self.backup_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
         # Second Stage Upgrade
-        self.backup_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64'], self.config['CODE_DEST'])
+        # Only upgrade if the current version is not already the final version:
+            if self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
+                # Perform the upgrade
+                self.backup_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64'], self.config['CODE_DEST'])
         # JSU Upgrade
+        # Only upgrade if the JSU is not already applied:
         if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
-            if self.two_stage:
-                self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_PRESERVE'])
+            if backup_RE == 'RE0':
+                curent_version  = etree.tostring(self.dev.rpc.get_software_information(re0=True)):
             else:
-                self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_DEST'])
+                curent_version  = etree.tostring(self.dev.rpc.get_software_information(re0=True)):
+            if self.two_stage:
+                if self.config['CODE_JSU_NAME'] not in current_version:
+                if self.two_stage:
+                    self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_PRESERVE'])
+                else:
+                    self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_DEST'])
+            else:
+                logging.warn('JSU appears to already be applied on {0}'.format(backup_RE))
 
    
-    def backup_re_pkg_add(self, PKG32, PKG64, R_PATH):
+    def backup_re_pkg_add(self, PKG32, PKG64, R_PATH, PKGNAME):
         """ Perform software add and reboot the back RE """
         self.dev.timeout = 3600
         # Figure which RE is the current backup
