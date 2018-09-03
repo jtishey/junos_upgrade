@@ -455,8 +455,10 @@ class RunUpgrade(object):
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
             # JSU installs are failing with RPC call
-            logging.warn("Unable to instsall the JSU remotely...")
-            self.input_parse("Login and install the JSU manually, enter Y to continue...")
+            logging.warn("Unable to instsall the JSU remotely, please do it manually...")
+            logging.warn("CMD: request routing-engine login backup")
+            logging.warn("CMD: request system software add {0}".format(PACKAGE))
+            self.input_parse("Once the JSU is installed, enter [Y] to continue...")
         else:
             rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True,
                                                    package_name=PACKAGE, re0=RE0, re1=RE1,
@@ -581,8 +583,9 @@ class RunUpgrade(object):
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
             # JSU installs are failing with RPC call
-            logging.warn("Unable to instsall the JSU remotely...")
-            self.input_parse("Login and install the JSU manually, enter Y to continue...")
+            logging.warn("Unable to instsall the JSU remotely, please do it manually...")
+            logging.warn("CMD: request system software add {0}".format(PACKAGE))
+            self.input_parse("Once the JSU is installed, enter [Y] to continue...")
         else:
             rsp = self.dev.rpc.request_package_add(reboot=True,
                                                no_validate=True,
