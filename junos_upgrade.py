@@ -70,7 +70,7 @@ class RunUpgrade(object):
         logging.getLogger().addHandler(logging.StreamHandler())
         logging.warn('Information logged in {0}'.format(logfile))
 
-        """ Open the self.config['yml file and load code versions and options """
+        """ Open the config.yml file and load code versions and options """
         try:
             with open(self.configfile) as f:
                 self.config = yaml.load(f)
@@ -459,15 +459,13 @@ class RunUpgrade(object):
         logging.warn('Installing ' + PACKAGE + ' on ' + backup_RE + '...')
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
-            # Not clear if it will barf on adding an "rex=False" for the JSU yet
-            if RE0:
-                rsp = self.dev.rpc.request_package_add(package_name=PACKAGE, re0=True)
-            elif RE1:
-                rsp = self.dev.rpc.request_package_add(package_name=PACKAGE, re1=True)
+            # JSU installs are failing with RPC call
+            logging.warn("Unable to instsall the JSU remotely...")
+            self.input_parse("Login and install the JSU manually, enter Y to continue...")
         else:
             rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True,
                                                    package_name=PACKAGE, re0=RE0, re1=RE1,
-                                                   force=self.force)
+                                                   force=self.force)        
         # Check to see if the package add succeeded:
         logging.warn('-----------------START PKG ADD OUTPUT-----------------')
         ok = True
@@ -490,6 +488,7 @@ class RunUpgrade(object):
             logging.warn("Script complete, please check the package add errors manually")
             self.end_script()
 
+        logging.warn('Rebooting, please wait...')
         # Wait 2 minutes for package to install / reboot, then start checking every 30s
         time.sleep(120)
         re_state = 'Present'
@@ -586,13 +585,15 @@ class RunUpgrade(object):
         logging.warn('Upgrading device... Please Wait...')
         # Change flags for JSU vs JINSTALL Package:
         if 'jselective' in PACKAGE:
-            rsp = self.dev.rpc.request_package_add(package_name=PACKAGE)
+            # JSU installs are failing with RPC call
+            logging.warn("Unable to instsall the JSU remotely...")
+            self.input_parse("Login and install the JSU manually, enter Y to continue...")
         else:
             rsp = self.dev.rpc.request_package_add(reboot=True,
                                                no_validate=True,
                                                package_name=PACKAGE,
                                                force=self.force)
-        
+
         # Check to see if the package add succeeded:
         logging.warn('-----------------START PKG ADD OUTPUT-----------------')
         ok = True
@@ -618,7 +619,7 @@ class RunUpgrade(object):
                 self.restore_traffic()
                 self.end_script()
 
-        logging.warn("Rebooting Device, this may take a while...")
+        logging.warn('Rebooting, please wait...')
         # Wait 2 minutes for package to install and reboot, then start checking every 30s
         time.sleep(120)
         while self.dev.probe() == False:
@@ -674,7 +675,7 @@ class RunUpgrade(object):
             if 'not ready' in str(r).lower():
                 logging.warn(str(r))
                 logging.warn("Waiting 2 minutes to stabilize...")
-                time.wait(120)
+                time.sleep(120)
                 try:
                     r = self.dev.cli('request chassis routing-engine master switch no-confirm')
                 except:
