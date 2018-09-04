@@ -425,17 +425,15 @@ class RunUpgrade(object):
         # Second Stage Upgrade
         # Only upgrade if the current version is not already the final version:
             if self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
-                # Perform the upgrade
                 self.backup_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64'], self.config['CODE_DEST'])
         # JSU Upgrade
         # Only upgrade if the JSU is not already applied:
         if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
             if backup_RE == 'RE0':
-                curent_version  = etree.tostring(self.dev.rpc.get_software_information(re0=True)):
+                current_version = etree.tostring(self.dev.rpc.get_software_information(re0=True))
             else:
-                curent_version  = etree.tostring(self.dev.rpc.get_software_information(re0=True)):
-            if self.two_stage:
-                if self.config['CODE_JSU_NAME'] not in current_version:
+                current_version = etree.tostring(self.dev.rpc.get_software_information(re1=True))
+            if self.config['CODE_JSU_NAME'] not in current_version:
                 if self.two_stage:
                     self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_PRESERVE'])
                 else:
@@ -444,7 +442,7 @@ class RunUpgrade(object):
                 logging.warn('JSU appears to already be applied on {0}'.format(backup_RE))
 
    
-    def backup_re_pkg_add(self, PKG32, PKG64, R_PATH, PKGNAME):
+    def backup_re_pkg_add(self, PKG32, PKG64, R_PATH):
         """ Perform software add and reboot the back RE """
         self.dev.timeout = 3600
         # Figure which RE is the current backup
