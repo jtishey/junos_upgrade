@@ -34,21 +34,20 @@ class RunUpgrade(object):
         self.pim_nonstop = False
         self.two_stage = False
 
-
     def get_arguments(self):
         """ Handle input from CLI """
         p = argparse.ArgumentParser(
             description='Parse and compare before/after baseline files.',
-            formatter_class=lambda prog: argparse.HelpFormatter(prog,max_help_position=32))
+            formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=32))
         p.add_argument('-d', '--device', help='Specify an IP or hostname to upgrade',
-                        required=True, metavar='DEV')
+                       required=True, metavar='DEV')
         p.add_argument('-c', '--config', help='Specify an alternate config file', metavar='CFG')
-        p.add_argument('-f', '--force', action='count', default=0, 
-                        help='Use "force" option on all package adds (DANGER!)')
+        p.add_argument('-f', '--force', action='count', default=0,
+                       help='Use "force" option on all package adds (DANGER!)')
         p.add_argument('-n', '--noinstall', action='count', default=0,
-                        help='Do a dry-run, check for files and copying them only')
+                       help='Do a dry-run, check for files and copying them only')
         p.add_argument('-y', '--yes_all', action='count', default=0,
-                        help='Answer "y" to all questions during the upgrade (DANGER!)')
+                       help='Answer "y" to all questions during the upgrade (DANGER!)')
         args = vars(p.parse_args())
         self.host = args['device']
         if args['config']:
@@ -81,7 +80,7 @@ class RunUpgrade(object):
         # verify package exists on local server
         if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])):
             msg = 'Software package does not exist: {0}. '.format(
-                                self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])
+                  self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])
             logging.error(msg)
             self.end_script()
 
@@ -110,17 +109,17 @@ class RunUpgrade(object):
             if self.dev.facts['version_RE0']:
                 logging.warn('            RE0   \t RE1')
                 logging.warn('Mastership: {0} \t {1}'.format(
-                                                self.dev.facts['RE0']['mastership_state'],
-                                                self.dev.facts['RE1']['mastership_state']))
+                             self.dev.facts['RE0']['mastership_state'],
+                             self.dev.facts['RE1']['mastership_state']))
                 logging.warn('Status:     {0} \t\t {1}'.format(
-                                                self.dev.facts['RE0']['status'],
-                                                self.dev.facts['RE1']['status']))
+                             self.dev.facts['RE0']['status'],
+                             self.dev.facts['RE1']['status']))
                 logging.warn('Model:      {0} \t {1}'.format(
-                                                self.dev.facts['RE0']['model'],
-                                                self.dev.facts['RE1']['model']))
+                             self.dev.facts['RE0']['model'],
+                             self.dev.facts['RE1']['model']))
                 logging.warn('Version:    {0} \t {1}'.format(
-                                                self.dev.facts['version_RE0'],
-                                                self.dev.facts['version_RE1']))
+                             self.dev.facts['version_RE0'],
+                             self.dev.facts['version_RE1']))
             else:
                 logging.warn('              RE0  ')
                 logging.warn('Mastership: {0}'.format(self.dev.facts['RE0']['mastership_state'] + ''))
@@ -128,7 +127,7 @@ class RunUpgrade(object):
                 logging.warn('Model:      {0}'.format(self.dev.facts['RE0']['model'] + ''))
                 logging.warn('Version:    {0}'.format(self.dev.facts['version'] + ''))
             logging.warn("")
-    
+
             # Check for redundant REs
             logging.warn('Checking for redundant routing-engines...')
             if not self.dev.facts['2RE']:
@@ -139,7 +138,7 @@ class RunUpgrade(object):
                 else:
                     logging.warn("Redundant RE's not found...")
 
-      
+
     def copy_image(self, source, dest):
         """ Copy files via SCP """
         logging.warn("Image not found on active RE, copying now...")
@@ -170,21 +169,21 @@ class RunUpgrade(object):
 
     def image_check(self):
         """ Check to make sure needed files are on the device and copy if needed,
-            Currently only able to copy to the active RE 
+            Currently only able to copy to the active RE
         """
         # List of 64-bit capable RE's:
         RE_64 = ['RE-S-1800x2-8G',
                  'RE-S-1800x2-16G',
                  'RE-S-1800x4-8G',
                  'RE-S-1800x4-16G']
-        
+
         if self.dev.facts['RE0']['model'] in RE_64:
             self.arch = '64-bit'
         else:
             # Determine 32-bit or 64-bit:
             logging.warn('Checking for 32 or 64-bit code...')
             ver = xmltodict.parse(etree.tostring(
-                   self.dev.rpc.get_software_information(detail=True)))
+                                  self.dev.rpc.get_software_information(detail=True)))
             version_info = json.dumps(ver)
             if '64-bit' in version_info:
                 self.arch = '64-bit'
@@ -209,7 +208,7 @@ class RunUpgrade(object):
                 dest_jsu = self.config['CODE_PRESERVE'] + self.config['CODE_JSU32']
             else:
                 dest = self.config['CODE_DEST'] + self.config['CODE_IMAGE32']
-                dest_jsu = self.config['CODE_DEST'] + self.config['CODE_JSU32']            
+                dest_jsu = self.config['CODE_DEST'] + self.config['CODE_JSU32']
         elif self.arch == '64-bit':
             source = self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64']
             source_2stg = self.config['CODE_FOLDER'] + self.config['CODE_2STAGE64']
@@ -220,7 +219,7 @@ class RunUpgrade(object):
                 dest_jsu = self.config['CODE_PRESERVE'] + self.config['CODE_JSU64']
             else:
                 dest = self.config['CODE_DEST'] + self.config['CODE_IMAGE64']
-                dest_jsu = self.config['CODE_DEST'] + self.config['CODE_JSU64']     
+                dest_jsu = self.config['CODE_DEST'] + self.config['CODE_JSU64']
 
         # Check for final software image on the device
         logging.warn('Checking for image on the active RE...')
@@ -253,7 +252,7 @@ class RunUpgrade(object):
         # If 2 stage upgrade, look for intermediate image
         if self.two_stage:
             logging.warn('Checking for 2-stage image on the active RE...')
-            img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_2stg)))                
+            img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_2stg)))
             img_output = json.dumps(img)
             if 'No such file' in img_output:
                 self.copy_image(source_2stg, dest_2stg)
@@ -262,25 +261,25 @@ class RunUpgrade(object):
             if self.dev.facts['2RE']:
                 logging.warn('Checking for 2-stage image on the backup RE...')
                 img = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
+                                      self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
                     self.copy_to_other_re(active_RE + dest_2stg, backup_RE + dest_2stg)
                     # Check again
                     img = xmltodict.parse(etree.tostring(
-                            self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
+                                          self.dev.rpc.file_list(path=backup_RE + dest_2stg)))
                     img_output = json.dumps(img)
                     if 'No such file' in img_output:
                         msg = 'file copy ' + active_RE + dest_2stg + ' ' + backup_RE + dest_2stg
                         logging.warn('ERROR: Copy the image to the backup RE, then re-run script')
                         logging.warn('CMD  : ' + msg)
                         self.end_script()
-                    
+
         # Check if JSU Install is requested (present in self.config['py)
         if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
             # Check for the JSU on the active RE
             logging.warn('Checking for JSU on the active RE...')
-            img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_jsu)))                
+            img = xmltodict.parse(etree.tostring(self.dev.rpc.file_list(path=dest_jsu)))
             img_output = json.dumps(img)
             if 'No such file' in img_output:
                 self.copy_image(source_jsu, dest_jsu)
@@ -289,12 +288,12 @@ class RunUpgrade(object):
             if self.dev.facts['2RE']:
                 logging.warn('Checking for JSU on the backup RE...')
                 img = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
+                                      self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
                 img_output = json.dumps(img)
                 if 'No such file' in img_output:
                     self.copy_to_other_re(active_RE + dest_jsu, backup_RE + dest_jsu)
                     img = xmltodict.parse(etree.tostring(
-                            self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
+                                          self.dev.rpc.file_list(path=backup_RE + dest_jsu)))
                     img_output = json.dumps(img)
                     if 'No such file' in img_output:
                         msg = 'file copy ' + active_RE + dest_jsu + ' ' + backup_RE + dest_jsu
@@ -325,23 +324,22 @@ class RunUpgrade(object):
     def remove_traffic(self):
         """ Execute the PRE_UPGRADE_CMDS from the self.config['py file to remove traffic """
         config_cmds = self.config['PRE_UPGRADE_CMDS']
-        
         # Network Service check on MX Platform
         if self.dev.facts['model'][:2] == 'MX':
             logging.warn("Checking for network-services enhanced-ip...")
             dpc_flag = False
             net_mode = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.network_services()))
+                                       self.dev.rpc.network_services()))
             cur_mode = net_mode['network-services']['network-services-information']['name']
             if cur_mode != 'Enhanced-IP':
                 # Check for DPCs
                 logging.warn("Checking for any installed DPCs...")
                 hw = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.get_chassis_inventory(models=True)))
+                                     self.dev.rpc.get_chassis_inventory(models=True)))
                 for item in hw['chassis-inventory']['chassis']['chassis-module']:
                     if item['description'][:3] == 'DPC':
                         dpc_flag = True
-                        
+
                 if dpc_flag:
                     logging.warn("Chassis has DPCs installed, skipping network-services change")
                 else:
@@ -353,14 +351,14 @@ class RunUpgrade(object):
                             self.set_enhanced_ip = True
                     else:
                         self.set_enhanced_ip = True
-        
+
         # PIM nonstop-routing must be removed if it's there to deactivate GRES
         pim = self.dev.rpc.get_config(filter_xml='<protocols><pim><nonstop-routing/></pim></protocols>')
         if len(pim) > 0:
             config_cmds.append('deactivate protocols pim nonstop-routing')
             # set a flag so we konw to turn it back on at the end
             self.pim_nonstop = True
-        
+
         # Make configuration changes
         if config_cmds:
             logging.warn('Entering Configuration Mode...')
@@ -376,7 +374,7 @@ class RunUpgrade(object):
                     if cu.diff():
                         if not self.yes_all:
                             cont = self.input_parse('Commit Changes? (y/n): ')
-                            if cont =='y':
+                            if cont == 'y':
                                 try:
                                     cu.commit()
                                 except CommitError as e:
@@ -419,7 +417,7 @@ class RunUpgrade(object):
         if self.two_stage:
             # Only upgrade if the current version is not the 2stage, or final version:
             if self.dev.facts['version_' + backup_RE] != self.config['CODE_2STAGE_NAME'] and \
-                        self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
+                    self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
                 # Perform the upgrade
                 self.backup_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
         # Second Stage Upgrade
@@ -441,7 +439,7 @@ class RunUpgrade(object):
             else:
                 logging.warn('JSU appears to already be applied on {0}'.format(backup_RE))
 
-   
+
     def backup_re_pkg_add(self, PKG32, PKG64, R_PATH):
         """ Perform software add and reboot the back RE """
         self.dev.timeout = 3600
@@ -481,7 +479,7 @@ class RunUpgrade(object):
         else:
             rsp = self.dev.rpc.request_package_add(reboot=True, no_validate=True,
                                                    package_name=PACKAGE, re0=RE0, re1=RE1,
-                                                   force=self.force)        
+                                                   force=self.force)
         # Check to see if the package add succeeded:
         logging.warn('-----------------START PKG ADD OUTPUT-----------------')
         ok = True
@@ -524,13 +522,13 @@ class RunUpgrade(object):
             logging.warn('Backup RE status = ' + re_status)
 
         logging.warn("Package " + PACKAGE + " took {0}".format(
-                        str(datetime.now() - startTime).split('.')[0]))
+                     str(datetime.now() - startTime).split('.')[0]))
 
         # Grab core dump and SW version info
         self.dev.facts_refresh()
         core_dump =  xmltodict.parse(etree.tostring(self.dev.rpc.get_system_core_dumps(re0=RE0, re1=RE1)))
         sw_version = xmltodict.parse(etree.tostring(self.dev.rpc.get_software_information(re0=RE0, re1=RE1)))
-        
+
         # Check for core dumps:
         logging.warn("Checking for core dumps...")
         if 'directory' in core_dump['multi-routing-engine-results']['multi-routing-engine-item']['directory-list'].keys():
@@ -545,19 +543,19 @@ class RunUpgrade(object):
         logging.warn(backup_RE + ' software version = ' + \
             sw_version['multi-routing-engine-results']['multi-routing-engine-item']['software-information']['junos-version'])
 
-        # Copy the final image back to the RE if needed after installing 
+        # Copy the final image back to the RE if needed after installing
         if self.arch == '64-bit':
             final_image = self.config['CODE_DEST'] + self.config['CODE_IMAGE64']
         else:
             final_image = self.config['CODE_DEST'] + self.config['CODE_IMAGE32']
-        
+
         img = xmltodict.parse(etree.tostring(
-                self.dev.rpc.file_list(path=backup_RE.lower() + ':' + final_image)))
+                              self.dev.rpc.file_list(path=backup_RE.lower() + ':' + final_image)))
         img_output = json.dumps(img)
         if 'No such file' in img_output:
             self.copy_to_other_re(active_RE.lower() + ':' + final_image, backup_RE.lower() + ':' + final_image)
             img = xmltodict.parse(etree.tostring(
-                    self.dev.rpc.file_list(path=backup_RE.lower() + ':' + final_image)))
+                                  self.dev.rpc.file_list(path=backup_RE.lower() + ':' + final_image)))
             img_output = json.dumps(img)
             if 'No such file' in img_output:
                 msg = 'file copy ' + active_RE.lower() + ':' + final_image + ' ' + backup_RE + ':' + final_image
@@ -607,9 +605,9 @@ class RunUpgrade(object):
             self.input_parse("Once the JSU is installed, enter [Y] to continue...")
         else:
             rsp = self.dev.rpc.request_package_add(reboot=True,
-                                               no_validate=True,
-                                               package_name=PACKAGE,
-                                               force=self.force)
+                                                   no_validate=True,
+                                                   package_name=PACKAGE,
+                                                   force=self.force)
 
         # Check to see if the package add succeeded:
         logging.warn('-----------------START PKG ADD OUTPUT-----------------')
@@ -639,12 +637,10 @@ class RunUpgrade(object):
         logging.warn('Rebooting, please wait...')
         # Wait 2 minutes for package to install and reboot, then start checking every 30s
         time.sleep(120)
-        while self.dev.probe() == False:
+        while self.dev.probe() is False:
             time.sleep(30)
-        
         logging.warn("Package " + PACKAGE + " took {0}".format(
-                        str(datetime.now() - startTime).split('.')[0]))
-        
+                     str(datetime.now() - startTime).split('.')[0]))
         # Once dev is reachable, re-open connection (refresh facts first to kill conn)
         self.dev.facts_refresh()
         self.dev.open()
@@ -652,7 +648,7 @@ class RunUpgrade(object):
 
         # Check for core dumps:
         logging.warn("Checking for core dumps...")
-        core_dump =  xmltodict.parse(etree.tostring(self.dev.rpc.get_system_core_dumps()))    
+        core_dump = xmltodict.parse(etree.tostring(self.dev.rpc.get_system_core_dumps()))
         for item in core_dump['multi-routing-engine-results']['multi-routing-engine-item']['directory-list']['output']:
             if 'No such file' not in item:
                 logging.warn('Found Core Dumps!  Please investigate.')
@@ -688,7 +684,7 @@ class RunUpgrade(object):
                 r = self.dev.cli('request chassis routing-engine master switch no-confirm')
             except:
                 time.sleep(10)
-            
+
             if 'not ready' in str(r).lower():
                 logging.warn(str(r))
                 logging.warn("Waiting 2 minutes to stabilize...")
@@ -696,7 +692,7 @@ class RunUpgrade(object):
                 try:
                     r = self.dev.cli('request chassis routing-engine master switch no-confirm')
                 except:
-                    time.sleep(5)    
+                    time.sleep(5)
                 if 'Not ready' in str(r):
                     logging.warn(str(r))
                     cont = self.input_parse('Please switchover manually and enter "y" to continue: ')
@@ -707,7 +703,7 @@ class RunUpgrade(object):
             except:
                 pass
             time.sleep(15)
-            while self.dev.probe() == False:
+            while self.dev.probe() is False:
                 time.sleep(10)
             # Once dev is reachable, re-open connection (refresh facts first to kill conn)
             self.dev.open()
@@ -723,12 +719,12 @@ class RunUpgrade(object):
                 try:
                     with Config(self.dev, mode='exclusive') as cu:
                         cu.load('set chassis network-services enhanced-ip',
-                                 merge=True, ignore_warning=True)
+                                merge=True, ignore_warning=True)
                         cu.commit(sync=True, full=True)
                 except:
                     logging.warn('Error commtitting "set chassis network-services enhanced-ip"')
                     logging.warn('Device will not be rebooted, please check error configuring enhanced-ip')
-                
+
                 logging.warn("-----------------------WARNING------------------------------")
                 logging.warn("SERVICE IMPACTING REBOOT WARNING")
                 logging.warn("-----------------------------------------------------------")
@@ -745,7 +741,7 @@ class RunUpgrade(object):
                     self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
                     # Wait 2 minutes for reboot, then start checking every 30s
                     time.sleep(120)
-                    while self.dev.probe() == False:
+                    while self.dev.probe() is False:
                         time.sleep(30)
                     self.dev.facts_refresh()
                     self.dev.open()
@@ -826,9 +822,9 @@ class RunUpgrade(object):
             logging.warn('Checking task replication...')
             task_sync = False
             waiting_on = ''
-            while task_sync == False:
+            while task_sync is False:
                 rep = xmltodict.parse(etree.tostring(
-                        self.dev.rpc.get_routing_task_replication_state()))
+                                      self.dev.rpc.get_routing_task_replication_state()))
                 task_sync = True
                 for i, item in enumerate(rep['task-replication-state']['task-protocol-replication-state']):
                     if item != 'Complete':
@@ -837,7 +833,7 @@ class RunUpgrade(object):
                         if waiting_on != proto:
                             waiting_on = proto
                             logging.warn(proto + ': ' + item + '...')
-                if task_sync == False:
+                if task_sync is False:
                     time.sleep(60)
             # Check which RE is active and switchover if needed
             if self.dev.facts['RE0']['mastership_state'] != 'master':
