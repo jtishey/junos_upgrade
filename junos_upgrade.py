@@ -377,9 +377,10 @@ class RunUpgrade(object):
                             if cont == 'y':
                                 try:
                                     cu.commit()
-                                except CommitError as e:
-                                    logging.warn("Error committing changes")
-                                    logging.warn(str(e))
+                                except Exception as e:
+                                    logging.warn("Error occurred during commit")
+                                    print(e.message)
+                                    success = False
                             else:
                                 logging.warn('Rolling back changes...')
                                 cu.rollback(rb_id=0)
@@ -388,9 +389,10 @@ class RunUpgrade(object):
                             logging.warn('Committing changes...')
                             try:
                                 cu.commit()
-                            except CommitError as e:
-                                logging.warn("Error committing changes")
-                                logging.warn(str(e))
+                            except Exception as e:
+                                logging.warn("Error occurred during commit")
+                                print(e.message)
+                                success = False
                     else:
                         logging.warn('No changes found to commit...')
             except RuntimeError as e:
@@ -796,9 +798,10 @@ class RunUpgrade(object):
                                     cu.commit(sync=True, full=True)
                                 else:
                                     cu.commit(full=True)
-                            except CommitError as e:
-                                logging.warn("Error committing changes")
-                                logging.warn(str(e))
+                            except Exception as e:
+                                logging.warn("Error occurred during commit")
+                                print(str(e))
+                                success = False
                     else:
                         logging.warn('Committing Changes...')
                         try:
@@ -806,9 +809,9 @@ class RunUpgrade(object):
                                 cu.commit(sync=True, full=True)
                             else:
                                 cu.commit(full=True)
-                        except CommitError as e:
+                        except Exception as e:
                             logging.warn("Error committing changes")
-                            logging.warn(str(e))
+                            logging.warn(e.message)
             if not success:
                 self.end_script()
         else:
