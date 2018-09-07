@@ -51,7 +51,7 @@ class RunUpgrade(object):
         args = vars(p.parse_args())
         self.host = args['device']
         if args['config']:
-            self.config = args['config']
+            self.configfile = args['config']
         if args['force']:
             self.force - True
         if args['noinstall']:
