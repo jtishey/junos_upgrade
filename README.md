@@ -11,7 +11,7 @@ John Tishey - 2018
 
 
 
-## Sample Output 1 - EX4200 upgrade
+### Sample Output 1 - EX4200 upgrade
 ```john➜~» scripts/python/junos_upgrade/junos_upgrade.py -d 172.16.212.21 -c ./config.yml -y                            [1:54:20]
 Information logged in 172.16.212.21_upgrade.log
 Connecting to 172.16.212.21...
