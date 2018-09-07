@@ -176,6 +176,18 @@ class RunUpgrade(object):
             logging.warn("CMD: file copy " + source + " " + dest)
 
 
+    def recursive_search(self, obj, key):
+        """ recursively search dict for a key value
+        https://stackoverflow.com/questions/14962485/finding-a-key-recursively-in-a-dictionary 
+        """
+        if key in obj: return obj[key]
+        for v in obj.values():
+            if isinstance(v,dict):
+                item = self.recursive_search(v, key)
+                if item is not None:
+                    return item
+
+
     def image_check(self):
         """ Check to make sure needed files are on the device and copy if needed,
             Currently only able to copy to the active RE
@@ -317,20 +329,23 @@ class RunUpgrade(object):
         self.dev.timeout = 360
         try:
             snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
-            if 'error' in json.dumps(snap):
-                logging.warn("Error taking snapshot... Please check device logs")
+            err = self.recursive_search(snap, 'error')
+            if err:                
+                logging.warn("Error taking snapshot... {0}".format(err['message']))
 
             if self.dev.facts['2RE']:
                 logging.warn('Requesting system snapshot on RE1...')
                 snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re1=True)))
-                if 'error' in json.dumps(snap):
-                    logging.warn("Error taking snapshot... Please check device logs")
+                err = self.recursive_search(snap, 'error')
+                if err:                
+                    logging.warn("Error taking snapshot... {0}".format(err['message']))
         except Exception as e:
             logging.warn('ERROR: Problem with snapshots')
             logging.warn(str(e))
-            cont = self.input_parse("Contine with upgrade? (y/n): ")
-            if cont == 'n':
-                self.end_script()
+            if not self.yes_all:
+                cont = self.input_parse("Contine with upgrade? (y/n): ")
+                if cont == 'n':
+                    self.end_script()
 
 
     def remove_traffic(self):
