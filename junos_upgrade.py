@@ -389,8 +389,8 @@ class RunUpgrade(object):
                                 try:
                                     cu.commit()
                                 except Exception as e:
+                                    logging.warn(str(e))
                                     logging.warn("Error occurred during commit")
-                                    print(e.message)
                                     success = False
                             else:
                                 logging.warn('Rolling back changes...')
@@ -401,8 +401,8 @@ class RunUpgrade(object):
                             try:
                                 cu.commit()
                             except Exception as e:
+                                logging.warn(str(e))
                                 logging.warn("Error occurred during commit")
-                                print(e.message)
                                 success = False
                     else:
                         logging.warn('No changes found to commit...')
@@ -761,7 +761,7 @@ class RunUpgrade(object):
                         self.dev.open()
                         self.dev.facts_refresh()
                     except:
-                        self.dev.optn()
+                        self.dev.open()
                         
 
     def input_parse(self, msg):
@@ -824,8 +824,8 @@ class RunUpgrade(object):
                             else:
                                 cu.commit(full=True)
                         except Exception as e:
+                            logging.warn(str(e))
                             logging.warn("Error committing changes")
-                            logging.warn(e.message)
             if not success:
                 self.end_script()
         else:
