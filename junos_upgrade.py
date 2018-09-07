@@ -61,7 +61,7 @@ class RunUpgrade(object):
 
 
     def initial_setup(self):
-        """ Setup logging and check for the image on the server """
+        """ Setup logging, load config and check for the images on the server """
         logfile = self.host + '_upgrade.log'
         logging.basicConfig(filename=logfile, level=logging.WARN,
                             format='%(asctime)s:%(name)s: %(message)s')
@@ -69,12 +69,12 @@ class RunUpgrade(object):
         logging.getLogger().addHandler(logging.StreamHandler())
         logging.warn('Information logged in {0}'.format(logfile))
 
-        """ Open the config.yml file and load code versions and options """
+        # Open config file
         try:
             with open(self.configfile) as f:
                 self.config = yaml.load(f)
         except:
-            logging.warn("ERROR: Issues opening config file {0}".format(self.configfile))
+            logging.warn('ERROR: Issues opening config file "{0}"'.format(self.configfile))
             exit(1)
 
         # verify needed packages exist on local server
