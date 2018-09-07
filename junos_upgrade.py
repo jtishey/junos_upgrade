@@ -86,9 +86,10 @@ class RunUpgrade(object):
                     msg = 'Software package does not exist locally: {0}. '.format(
                            self.config['CODE_FOLDER'] + self.config[pkg])
                     logging.error(msg)
-                    cont = self.input_parse('Continue? (n/n): ')
-                    if cont == 'n':
-                        exit()
+                    if not self.yes_all:
+                        cont = self.input_parse('Continue? (n/n): ')
+                        if cont == 'n':
+                            exit()
 
 
     def open_connection(self):
@@ -435,8 +436,8 @@ class RunUpgrade(object):
                 self.backup_re_pkg_add(self.config['CODE_2STAGE32'], self.config['CODE_2STAGE64'], self.config['CODE_PRESERVE'])
         # Second Stage Upgrade
         # Only upgrade if the current version is not already the final version:
-            if self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
-                self.backup_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64'], self.config['CODE_DEST'])
+        if self.dev.facts['version_' + backup_RE] != self.config['CODE_NAME']:
+            self.backup_re_pkg_add(self.config['CODE_IMAGE32'], self.config['CODE_IMAGE64'], self.config['CODE_DEST'])
         # JSU Upgrade
         # Only upgrade if the JSU is not already applied:
         if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
@@ -444,7 +445,7 @@ class RunUpgrade(object):
                 current_version = etree.tostring(self.dev.rpc.get_software_information(re0=True))
             else:
                 current_version = etree.tostring(self.dev.rpc.get_software_information(re1=True))
-            if self.config['CODE_JSU_NAME'] not in current_version:
+            if self.config['CODE_JSU_NAME'] not in str(current_version):
                 if self.two_stage:
                     self.backup_re_pkg_add(self.config['CODE_JSU32'], self.config['CODE_JSU64'], self.config['CODE_PRESERVE'])
                 else:
