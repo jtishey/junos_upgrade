@@ -84,7 +84,7 @@ class RunUpgrade(object):
             if pkg:
                 if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config[pkg])):
                     msg = 'Software package does not exist locally: {0}. '.format(
-                           self.config['CODE_FOLDER'] + self.config[pkg)
+                           self.config['CODE_FOLDER'] + self.config[pkg])
                     logging.error(msg)
                     cont = self.input_parse('Continue? (n/n): ')
                     if cont == 'n':
