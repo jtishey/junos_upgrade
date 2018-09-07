@@ -79,7 +79,7 @@ class RunUpgrade(object):
 
         # verify needed packages exist on local server
         for pkg in ['CODE_IMAGE32','CODE_IMAGE64',
-                    'CODE_2STAGE32', 'CODE_2STAGE64'
+                    'CODE_2STAGE32', 'CODE_2STAGE64',
                     'CODE_JSU32', 'CODE_JSU64']:
             if pkg:
                 if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config[pkg])):
