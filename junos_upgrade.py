@@ -81,9 +81,9 @@ class RunUpgrade(object):
         for pkg in ['CODE_IMAGE32','CODE_IMAGE64',
                     'CODE_2STAGE32', 'CODE_2STAGE64',
                     'CODE_JSU32', 'CODE_JSU64']:
-            if pkg:
+            if self.config[pkg]:
                 if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config[pkg])):
-                    msg = 'Software package does not exist locally: {0}. '.format(
+                    msg = 'Software package does not exist locally: {0}'.format(
                            self.config['CODE_FOLDER'] + self.config[pkg])
                     logging.error(msg)
                     if not self.yes_all:
