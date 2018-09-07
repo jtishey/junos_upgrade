@@ -77,12 +77,18 @@ class RunUpgrade(object):
             logging.warn("ERROR: Issues opening config file {0}".format(self.configfile))
             exit(1)
 
-        # verify package exists on local server
-        if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])):
-            msg = 'Software package does not exist: {0}. '.format(
-                  self.config['CODE_FOLDER'] + self.config['CODE_IMAGE64'])
-            logging.error(msg)
-            self.end_script()
+        # verify needed packages exist on local server
+        for pkg in ['CODE_IMAGE32','CODE_IMAGE64',
+                    'CODE_2STAGE32', 'CODE_2STAGE64'
+                    'CODE_JSU32', 'CODE_JSU64']:
+            if pkg:
+                if not (os.path.isfile(self.config['CODE_FOLDER'] + self.config[pkg])):
+                    msg = 'Software package does not exist locally: {0}. '.format(
+                           self.config['CODE_FOLDER'] + self.config[pkg)
+                    logging.error(msg)
+                    cont = self.input_parse('Continue? (n/n): ')
+                    if cont == 'n':
+                        exit()
 
 
     def open_connection(self):
@@ -157,12 +163,14 @@ class RunUpgrade(object):
         d = {'device_type': 'juniper',
              'ip': self.host,
              'username': self.auth['username'],
-             'password': self.auth['password']}
+             'password': self.auth['password'],
+             'timeout': 3600}
         try:
             net_connect = ConnectHandler(**d)
             net_connect.send_command("file copy " + source + " " + dest)
             net_connect.disconnect()
-        except:
+        except Exception as e:
+            logging.warn(str(e))
             logging.warn("Error copying file to other RE, Please login and do this manually")
             logging.warn("CMD: file copy " + source + " " + dest)
 
@@ -275,7 +283,7 @@ class RunUpgrade(object):
                         logging.warn('CMD  : ' + msg)
                         self.end_script()
 
-        # Check if JSU Install is requested (present in self.config['py)
+        # Check if JSU Install is requested (present in config.yml)
         if self.config['CODE_JSU32'] or self.config['CODE_JSU64']:
             # Check for the JSU on the active RE
             logging.warn('Checking for JSU on the active RE...')
@@ -305,7 +313,7 @@ class RunUpgrade(object):
     def system_snapshot(self):
         """ Performs [request system snapshot] on the device """
         logging.warn('Requesting system snapshot on RE0...')
-        self.dev.timeout = 240
+        self.dev.timeout = 360
         try:
             snap = xmltodict.parse(etree.tostring(self.dev.rpc.request_snapshot(re0=True)))
             if 'error' in json.dumps(snap):
@@ -319,6 +327,9 @@ class RunUpgrade(object):
         except Exception as e:
             logging.warn('ERROR: Problem with snapshots')
             logging.warn(str(e))
+            cont = self.input_parse("Contine with upgrade? (y/n): ")
+            if cont == 'n':
+                self.end_script()
 
 
     def remove_traffic(self):
@@ -352,7 +363,7 @@ class RunUpgrade(object):
                     else:
                         self.set_enhanced_ip = True
 
-        # PIM nonstop-routing must be removed if it's there to deactivate GRES
+        # PIM nonstop-routing (if configured) must be removed to deactivate GRES
         pim = self.dev.rpc.get_config(filter_xml='<protocols><pim><nonstop-routing/></pim></protocols>')
         if len(pim) > 0:
             config_cmds.append('deactivate protocols pim nonstop-routing')
@@ -723,7 +734,8 @@ class RunUpgrade(object):
                         cu.load('set chassis network-services enhanced-ip',
                                 merge=True, ignore_warning=True)
                         cu.commit(sync=True, full=True)
-                except:
+                except Exception as e:
+                    logging.warn(str(e))
                     logging.warn('Error commtitting "set chassis network-services enhanced-ip"')
                     logging.warn('Device will not be rebooted, please check error configuring enhanced-ip')
 
@@ -731,24 +743,26 @@ class RunUpgrade(object):
                 logging.warn("SERVICE IMPACTING REBOOT WARNING")
                 logging.warn("-----------------------------------------------------------")
 
+                cont = 'y'
                 if not self.yes_all:
                     cont = self.input_parse('Reboot both REs now to set network-services mode enhanced-ip? (y/n): ')
-                else:
-                    cont = 'y'
                 if cont != 'y':
                     logging.warn("Skipping reboot of both RE's for network-services mode...")
                 else:
                     logging.warn('Rebooting ' + self.host + '... Please wait...')
-                    self.dev.timeout = 3600
-                    self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
-                    # Wait 2 minutes for reboot, then start checking every 30s
-                    time.sleep(120)
-                    while self.dev.probe() is False:
-                        time.sleep(30)
-                    self.dev.facts_refresh()
-                    self.dev.open()
-                    self.dev.facts_refresh()
-
+                    self.dev.timeout = 600
+                    try:
+                        self.dev.rpc.request_reboot(routing_engine='both-routing-engines')
+                        # Wait 2 minutes for reboot, then start checking every 30s
+                        time.sleep(120)
+                        while self.dev.probe() is False:
+                            time.sleep(30)
+                        self.dev.facts_refresh()
+                        self.dev.open()
+                        self.dev.facts_refresh()
+                    except:
+                        self.dev.optn()
+                        
 
     def input_parse(self, msg):
         """ Prompt for input """
