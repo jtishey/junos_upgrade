@@ -1,0 +1,29 @@
+# SETTINGS VALUES:
+# (MX Platforms will be checked for network-services mode Enhanced-IP automatically)
+# (Nonstop routing in PIM config will also be handled automatically)
+
+# LOCAL DIRECTORY ON THE SERVER FOR IMAGES
+CODE_FOLDER: '/var/lib/awx/projects/junos_upgrade/'
+
+# DIRECTORY AND IMAGE NAMES ON THE DEVICE TO BE UPGRADED
+CODE_DEST: '/var/tmp/'
+CODE_NAME: '14.1X53-D47.6'
+CODE_IMAGE64: 'jinstall-ex-4200-14.1X53-D47.6-domestic-signed.tgz'
+CODE_IMAGE32: 'jinstall-ex-4200-14.1X53-D47.6-domestic-signed.tgz'
+
+# DIRECTORY AND IMAGE NAMES IF A 2-STAGE UPGRADE IS NEEDED
+CODE_PRESERVE: ''
+CODE_2STAGE_NAME: ''
+CODE_2STAGE64: ''
+CODE_2STAGE32: ''
+
+# JSU NAMES IF REQUIRED
+CODE_JSU_NAME: ''
+CODE_JSU32: ''
+CODE_JSU64: ''
+
+# # CONFIG COMANDS TO BE RUN BEFORE STARTING THE UPGRADE
+PRE_UPGRADE_CMDS:
+
+# CONFIG COMANDS TO BE RUN AFTER THE UPGRADE IS COMPLETE
+POST_UPGRADE_CMDS:
